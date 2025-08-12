@@ -92,18 +92,18 @@ input[type=range],select{ width:100% }
 </div>
 
 <script>
-/* ========== helpers ========== */
+/* ================= helpers ================= */
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
 
-/* ========== FEMALE-ONLY voice system with truthful labels + UAE bucket ========== */
-/* Strategy:
-   - Filter out males hard (vendor “Male”, male-name patterns).
-   - Keep only voices with strong female cues (explicit “Female”, known female voice names, or ar-AE/en-AE for UAE).
-   - Display names truthfully:
-       • If vendor name contains a known female name token, use that token.
-       • Else generate a stable single female name from a region pool (hashed by voice key), *only* for voices that passed strict female cues.
-   - Instant UI from cache; fast engine scan; background verification to keep only working voices.
+/* ================= FEMALE-ONLY voice system with truthful labels & fast loading =================
+   Design:
+   - Exclude any male/ambiguous voices aggressively.
+   - Only include voices with explicit female cues (name includes “Female” or a known female token),
+     OR ar-AE/en-AE voices whose vendor name matches known female Arabic names.
+   - Single-name labels come from the engine’s own female token when present; otherwise from a stable region pool.
+   - Instant UI from cached, verified voices; fast engine scan; background parallel verification (muted).
+   - Dedicated "United Arab Emirates" region.
 */
 let VOICE=null, voicesReady=false;
 let userRateChanged=false, userPitchChanged=false;
@@ -119,17 +119,15 @@ const regionName=lang=>{
   if(code==='AE') return 'United Arab Emirates';
   return REGION_NAMES[code] || (/^en\b/i.test(lang)?'Global English':'Other Region');
 };
-
 const vKey=v=>v.voiceURI||(v.name+'|'+v.lang);
 function setStatus(t){ const el=$('voiceStatus'); if(el) el.textContent=t; }
 function clearStatus(){ setStatus('Ready'); }
 
-/* Male / female cues */
+/* Gender cues */
 const MALE_NEG=/\b(male|boy|man|daniel|david|george|michael|mark|tom|fred|brian|kevin|liam|adam|andy|ben|bruce|charles|chris|eric|frank|jack|john|luke|matt|mike|nathan|paul|peter|ryan|steve|tim|alex(?!a)|james|william|robert|andrew|henry|richard|pablo|ricardo|mateo)\b/i;
-/* Strong female indicators: vendor says “Female” or known female voice tokens across engines */
-const FEMALE_STRONG=/\b(female|zira|samantha|karen|moira|tessa|serena|veena|victoria|joanna|jenny|aria|jessa|kimberly|kendra|ivy|nicole|salli|olivia|ella|ava|amy|emma|mia|sophia|isabella|noor|nour|layla|leila|hala|mariam|salma|dana|rania|yasmin|yasmine|amal|reem|farah|natasha|catherine|allison|chloe|grace|zoe|sarah|sofia|camila|paulina|luciana|monica|monika|anna|tatyana|zhiyu)\b/i;
+const FEMALE_TOKENS=/\b(zira|samantha|karen|moira|tessa|serena|veena|victoria|joanna|jenny|aria|jessa|kimberly|kendra|ivy|nicole|salli|olivia|ella|ava|amy|emma|mia|sophia|isabella|natasha|catherine|allison|chloe|grace|zoe|sarah|sofia|camila|paulina|luciana|monica|anna|tatyana|zhiyu|hazel|helen|riva|luna|maya|noor|nour|layla|leila|hala|mariam|maryam|salma|dana|rania|yasmin|yasmine|amal|reem|farah|fatima|fatma|huda|nada|noura|nura)\b/i;
 
-/* Region female name pools for stable single-name labels (used only after passing FEMALE_STRONG) */
+/* Pools for stable single-name labels (fallback only after strict female check) */
 const POOLS={
  'United Arab Emirates':['Layla','Noor','Hala','Mariam','Salma','Dana','Rania','Yasmin','Amal','Leila'],
  'Australia':['Zoe','Isla','Mia','Sophie','Olivia','Ava','Ella','Grace','Ruby','Lily'],
@@ -148,38 +146,90 @@ const POOLS={
  'Other Region':['Amy','Ella','Zoe','Mia','Ava','Sophie','Lily','Ruby','Grace','Chloe']
 };
 
-/* Derive a truthful single-name label:
-   1) If vendor name contains a known female token (FEMALE_STRONG), pick that token (proper-cased).
-   2) Else hash the voice key to pick a stable female name from the region pool (but only because it already passed FEMALE_STRONG or ar-AE).
+/* Strict female test: explicit 'Female' or a known female token; or Arabic AE with female-name token. */
+function isStrictFemale(v){
+  const name=(v.name+' '+v.voiceURI).toLowerCase();
+  if(MALE_NEG.test(name)) return false;
+  if(/\bfemale\b/.test(name)) return true;
+  if(FEMALE_TOKENS.test(name)) return true;
+  const isAE = /(^|\b)(ar|en)[-_]?ae(\b|$)/i.test(v.lang);
+  if(isAE && FEMALE_TOKENS.test(name)) return true;
+  return false;
+}
+
+/* Labeling:
+   - Prefer a female token present in the vendor voice name.
+   - Else hash to a region pool (only after isStrictFemale == true).
 */
 function properCase(s){ return s.charAt(0).toUpperCase()+s.slice(1).toLowerCase(); }
 function extractFemaleToken(name){
-  const lower = name.toLowerCase();
-  const tokens = ['zira','samantha','karen','moira','tessa','serena','veena','victoria','joanna','jenny','aria','jessa','kimberly','kendra','ivy','nicole','salli','olivia','ella','ava','amy','emma','mia','sophia','isabella','noor','nour','layla','leila','hala','mariam','salma','dana','rania','yasmin','yasmine','amal','reem','farah','natasha','catherine','allison','chloe','grace','zoe','sarah','sofia','camila','paulina','luciana','monica','anna','tatyana','zhiyu'];
+  const lower=name.toLowerCase();
+  const tokens = [...new Set(FEMALE_TOKENS.source.replace(/\\b|\(|\)|\||\\/g,' ').split(' ').filter(Boolean))];
   for(const t of tokens){ if(lower.includes(t)) return properCase(t); }
-  // Also catch patterns like "Google UK English Female" where a human name isn't present
-  if(/\bfemale\b/i.test(name)) return null; // will fall back to pool
+  if(/\bfemale\b/i.test(name)) return null; // fall back to pool
+  // Try Microsoft pattern "Microsoft <Name> ..." (pick the Name if looks female)
+  const m=name.match(/microsoft\s+([a-z]+)\b/i);
+  if(m && FEMALE_TOKENS.test(m[1])) return properCase(m[1]);
   return null;
 }
 function hashInt(str){ let h=0; for(let i=0;i<str.length;i++) h=(h*31 + str.charCodeAt(i))>>>0; return h>>>0; }
 function labelForVoice(v){
+  const token = extractFemaleToken(v.name || v.voiceURI || '');
+  if(token) return token;
   const region = regionName(v.lang);
-  const tok = extractFemaleToken(v.name || v.voiceURI || '');
-  if(tok) return tok; // truthful token found in engine name
   const pool = POOLS[region] || POOLS['Other Region'];
-  const idx = hashInt(vKey(v)) % pool.length;
-  return pool[idx];
+  return pool[ hashInt(vKey(v)) % pool.length ];
 }
 
-/* Cache of verified working voices for instant reuse */
-const CACHE_KEY='rnback_voice_ok_v5';
+/* Filter & order voices */
+function filterFemaleVoices(raw){
+  return raw.filter(isStrictFemale).sort((a,b)=>{
+    const prio = (v)=> ( /AE$/i.test(v.lang)?3 : /^en[-_](AU|GB|US)/i.test(v.lang)?2 : 1 )
+                      + (/\bfemale\b/i.test(v.name)?0.2:0)
+                      + (FEMALE_TOKENS.test((v.name+' '+v.voiceURI))?0.1:0);
+    return prio(b)-prio(a);
+  });
+}
+
+/* Cache of verified working voices for instant reuse (keys + metadata) */
+const CACHE_KEY='rnback_voice_ok_v6';
 function loadCache(){ try{return JSON.parse(localStorage.getItem(CACHE_KEY)||'{}');}catch(_){return{};} }
 function saveCache(obj){ try{localStorage.setItem(CACHE_KEY,JSON.stringify(obj));}catch(_){} }
 const okCache=loadCache(); // { key: {ts,name,lang} }
 
+/* Populate UI */
+function regionListFrom(voices){ return [...new Set(voices.map(v=>regionName(v.lang)))].sort(); }
+function populateRegions(voices){
+  const sel=$('regionSelect'); sel.innerHTML='';
+  const regions=regionListFrom(voices);
+  regions.forEach(r=>{ const o=document.createElement('option'); o.value=r; o.textContent=r; sel.appendChild(o); });
+  for(const pref of ['United Arab Emirates','Australia','United Kingdom','United States']){
+    if(regions.includes(pref)){ sel.value=pref; break; }
+  }
+  if(!sel.value && regions.length) sel.value=regions[0];
+}
+function populateVoicesForRegion(voices){
+  const sel=$('voice'); sel.innerHTML='';
+  const region=$('regionSelect').value;
+  const list=voices.filter(v=>regionName(v.lang)===region);
+  list.forEach(v=>{
+    const o=document.createElement('option');
+    o.value=vKey(v);
+    o.textContent=labelForVoice(v); // truthful or region-stable female name
+    o.title=`${v.name} — ${region} — ${v.lang}`;
+    sel.appendChild(o);
+  });
+  const best=list[0]||null;
+  if(best){ sel.value=vKey(best); bindEngineVoice(best); applyFeminineDefaultsIfUntouched(); }
+}
+function bindEngineVoice(v){
+  const all=speechSynthesis.getVoices();
+  VOICE = all.find(ev=>vKey(ev)===vKey(v)) || v;
+}
+
+/* Fast engine scan */
 async function getEngineVoices(maxWait=900){
   if(!('speechSynthesis' in window)) return [];
-  // wake
   try{ const u=new SpeechSynthesisUtterance(''); u.volume=0; u.rate=10; speechSynthesis.speak(u);}catch(_){}
   const start=performance.now();
   return new Promise(resolve=>{
@@ -191,62 +241,7 @@ async function getEngineVoices(maxWait=900){
   });
 }
 
-/* Hard filter: no male terms; then require FEMALE_STRONG or UAE language hint */
-function filterFemaleVoices(raw){
-  return raw.filter(v=>{
-    const label=(v.name+' '+v.voiceURI).toLowerCase();
-    if(MALE_NEG.test(label)) return false;
-    if(/\bmale\b/.test(label)) return false;
-    const isUAE = /^(ar|en)[-_]?AE$/i.test(v.lang);
-    if(FEMALE_STRONG.test(label) || /\bfemale\b/i.test(label) || isUAE) return true;
-    // Unknown gender → exclude to avoid mismatched female name on a male voice
-    return false;
-  }).sort((a,b)=>{
-    // Prefer ar-AE first, then en-AU/GB/US, then others; then by presence of explicit 'female'
-    const prio = (v)=> ( /AE$/i.test(v.lang)?3 : /^en[-_](AU|GB|US)/i.test(v.lang)?2 : 1 ) + (/\bfemale\b/i.test(v.name)?0.2:0) + (FEMALE_STRONG.test((v.name+' '+v.voiceURI))?0.1:0);
-    return prio(b)-prio(a);
-  });
-}
-
-function regionListFrom(voices){ return [...new Set(voices.map(v=>regionName(v.lang)))].sort(); }
-
-function populateRegions(voices){
-  const regions=regionListFrom(voices);
-  const sel=$('regionSelect'); sel.innerHTML='';
-  regions.forEach(r=>{ const o=document.createElement('option'); o.value=r; o.textContent=r; sel.appendChild(o); });
-  for(const pref of ['United Arab Emirates','Australia','United Kingdom','United States']){
-    if(regions.includes(pref)){ sel.value=pref; break; }
-  }
-  if(!sel.value && regions.length) sel.value=regions[0];
-}
-
-function populateVoicesForRegion(voices){
-  const region=$('regionSelect').value;
-  const list=voices.filter(v=>regionName(v.lang)===region);
-  const sel=$('voice'); sel.innerHTML='';
-  list.forEach(v=>{
-    const o=document.createElement('option');
-    o.value=vKey(v);
-    o.textContent=labelForVoice(v);      // truthful / stable single name
-    o.title=`${v.name} — ${region} — ${v.lang}`;
-    sel.appendChild(o);
-  });
-  const best=list[0]||null;
-  if(best){ sel.value=vKey(best); bindEngineVoice(best); applyFeminineDefaultsIfUntouched(); }
-}
-
-function bindEngineVoice(v){
-  const all=speechSynthesis.getVoices();
-  const real=all.find(ev=>vKey(ev)===vKey(v));
-  VOICE = real || v;
-}
-
-function applyFeminineDefaultsIfUntouched(){
-  if(!userRateChanged){ $('vRate').value=0.92; $('rateVal').textContent='0.92'; }
-  if(!userPitchChanged){ $('vPitch').value=1.28; $('pitchVal').textContent='1.28'; }
-}
-
-/* Instant UI from cache (verified-only) */
+/* Instant from cache (verified-only) */
 function tryInstantFromCache(){
   const keys=Object.keys(okCache);
   if(!keys.length) return false;
@@ -258,18 +253,16 @@ function tryInstantFromCache(){
   return true;
 }
 
-/* Fast engine pull + populate (no blocking) */
+/* Fast populate from engine (non-blocking) */
 async function fastPopulateFromEngine(){
   setStatus('Loading…');
   const raw=await getEngineVoices(900);
   const females=filterFemaleVoices(raw);
-  if(!females.length){ setStatus('No voices'); return; }
-  populateRegions(females);
-  populateVoicesForRegion(females);
+  if(females.length){ populateRegions(females); populateVoicesForRegion(females); }
   clearStatus();
 }
 
-/* Verify with concurrency; keep only voices that actually start/end (muted) */
+/* Verify voices actually start/end (muted), concurrency-limited */
 function verifyVoiceWorks(v, timeout=600){
   return new Promise(res=>{
     let done=false;
@@ -303,42 +296,44 @@ async function verifyAndUpgrade(concurrency=12){
   clearStatus();
 }
 
-/* Public hooks */
+/* UI hooks */
 $('preloadVoices').onclick=async()=>{ await getEngineVoices(900); await verifyAndUpgrade(12); };
 $('testVoice').onclick=async()=>{ await getEngineVoices(900); await speak('Voice check. Example: C three is north of H seven.'); };
 $('regionSelect').onchange=()=>populateVoicesForRegion(filterFemaleVoices(speechSynthesis.getVoices()));
 $('voice').onchange=()=>{
   const key=$('voice').value;
-  const all=speechSynthesis.getVoices();
-  const found=all.find(v=>vKey(v)===key);
+  const found=speechSynthesis.getVoices().find(v=>vKey(v)===key);
   if(found) VOICE=found;
 };
+
+/* Defaults for feminine timbre (not shown in UI) */
+function applyFeminineDefaultsIfUntouched(){
+  if(!userRateChanged){ $('vRate').value=0.92; $('rateVal').textContent='0.92'; }
+  if(!userPitchChanged){ $('vPitch').value=1.28; $('pitchVal').textContent='1.28'; }
+}
 $('vRate').oninput=e=>{ userRateChanged=true; $('rateVal').textContent=(+e.target.value).toFixed(2); };
 $('vPitch').oninput=e=>{ userPitchChanged=true; $('pitchVal').textContent=(+e.target.value).toFixed(2); };
 $('vVol').oninput=e=>{ $('vVolVal').textContent=(+e.target.value).toFixed(2); };
 
-/* Init voices: instant cache → fast engine → background verify (non-blocking) */
+/* Init voices quickly */
 document.addEventListener('DOMContentLoaded', ()=>{
-  const ok=tryInstantFromCache();
-  fastPopulateFromEngine().then(()=>{/* upgraded quickly */});
+  tryInstantFromCache();           // verified-only cache → instant
+  fastPopulateFromEngine();        // quick engine fallback (female-only strict)
   if('speechSynthesis' in window){
     speechSynthesis.onvoiceschanged = ()=>{
       const raw=speechSynthesis.getVoices();
-      if(raw && raw.length){
-        const females=filterFemaleVoices(raw);
-        if(females.length){ populateRegions(females); populateVoicesForRegion(females); }
-      }
+      const females=filterFemaleVoices(raw);
+      if(females.length){ populateRegions(females); populateVoicesForRegion(females); }
     };
   }
   voicesReady=true; clearStatus();
 });
 
-/* ========== Relational logic (strict isomorphism; labels ignored) ========== */
+/* ================= Relational logic (strict isomorphism; labels ignored) ================= */
 const DIRS={
   north:{x:0,y:-1}, south:{x:0,y:1}, east:{x:1,y:0}, west:{x:-1,y:0},
   northeast:{x:1,y:-1}, northwest:{x:-1,y:-1}, southeast:{x:1,y:1}, southwest:{x:-1,y:1}
 };
-const HORIZ=Object.keys(DIRS);
 const LEVELS=[1,2,3];
 const LETTERS='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const token=()=> LETTERS[Math.floor(Math.random()*26)] + (1+Math.floor(Math.random()*9));
@@ -393,9 +388,8 @@ function sentencesCompatible(a,b){
   }
   return false;
 }
-
 function clauseString(from, rel, to){
-  if(rel.z && rel.z!==0){
+  if(rel.z){
     const n=Math.abs(rel.z), word=n===1?'one level':n===2?'two levels':'three levels';
     return `${from} is ${word} ${rel.z>0?'above':'below'} ${to}`;
   } else {
@@ -405,8 +399,8 @@ function clauseString(from, rel, to){
 }
 function randomPremise(){
   const [A,B,C]=uniqueTokens(3);
-  const pick=()=> Math.random()<0.6 ? {k:'h',d:HORIZ[Math.floor(Math.random()*HORIZ.length)]}
-                                    : {k:'v',n:LEVELS[Math.floor(Math.random()*LEVELS.length)],up:Math.random()<0.5};
+  const pick=()=> Math.random()<0.6 ? {k:'h',d:Object.keys(DIRS)[Math.floor(Math.random()*8)]}
+                                    : {k:'v',n:[1,2,3][Math.floor(Math.random()*3)],up:Math.random()<0.5};
   const c=(X,r,Y)=> r.k==='h' ? `${X} is ${r.d} of ${Y}` : `${X} is ${r.n} ${r.n===1?'level':'levels'} ${r.up?'above':'below'} ${Y}`;
   const r1=pick(), r2=pick();
   return `${c(A,r1,B)} and ${c(B,r2,C)}`;
@@ -425,7 +419,7 @@ function buildCompatible(sentence){
   return parts.join(' and ');
 }
 
-/* ========== Verbalization for TTS ========== */
+/* ================= verbalization for TTS ================= */
 function sayToken(tok){
   const m=tok.match(/^([A-Z])(\d+)$/); if(!m) return tok;
   const digits={'0':'zero','1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine'};
@@ -447,7 +441,7 @@ function verbalizeClause(clause){
 }
 function verbalizeSentence(s){ return s.split(/\s+and\s+/i).map(p=>verbalizeClause(p.trim())); }
 
-/* ========== Gameplay loop ========== */
+/* ================= gameplay ================= */
 let N=1, MAX=40, DUR=5000, REL_PAUSE=1000, RATE=25;
 let idx=0, running=false, paused=false;
 let waitTimer=null, remainderTimer=null;
@@ -469,6 +463,7 @@ function buildPremiseVisual(raw){
 }
 function setActivePart(i){ [...$('premiseText').querySelectorAll('.rel')].forEach((n,idx)=>n.classList.toggle('active', idx===i)); }
 
+/* TTS */
 function speak(text){
   return new Promise(res=>{
     if(!VOICE || !('speechSynthesis' in window)){ res(); return; }
@@ -523,22 +518,25 @@ async function runTrial(){
   buildPremiseVisual(s);
   spokenParts=verbalizeSentence(s);
   clauseIdx=0; trialStart=performance.now();
+
   const minNeeded=(spokenParts.length-1)*REL_PAUSE + 500;
   const effectiveDur=Math.max(DUR, minNeeded);
+
   await speakPremise(effectiveDur);
   if(!running || paused) return;
   idx++; updateUI(); runTrial();
 }
 
+/* Start control */
 async function ensureFastVoice(){
   // Prefer cached verified
   const keys=Object.keys(okCache);
   if(keys.length){
     const key=keys[0];
     const found=speechSynthesis.getVoices().find(v=>vKey(v)===key);
-    if(found){ VOICE=found; applyFeminineDefaultsIfUntouched(); return; }
+    if(found && isStrictFemale(found)){ VOICE=found; applyFeminineDefaultsIfUntouched(); return; }
   }
-  // Else pick first filtered female from engine
+  // Else pick first strict female from engine
   const all=speechSynthesis.getVoices();
   const females=filterFemaleVoices(all);
   if(females.length){ VOICE=females[0]; applyFeminineDefaultsIfUntouched(); }
@@ -591,11 +589,10 @@ function updateUI(){
   $('nVal').textContent=N; $('tVal').textContent=MAX; $('dVal').textContent=DUR; $('pVal').textContent=REL_PAUSE; $('rVal').textContent=RATE+'%';
 }
 
-/* ========== bindings & fast start ========== */
+/* bindings */
 $('start').onclick = async ()=>{
-  await ensureFastVoice();           // instant audio
-  // user gesture → verify in background and upgrade menu to verified-only
-  verifyAndUpgrade(12).catch(()=>{});
+  await ensureFastVoice();           // instant strict-female voice if available
+  verifyAndUpgrade(12).catch(()=>{}); // background: verified-only upgrade
   start();
 };
 $('pause').onclick=togglePause;
