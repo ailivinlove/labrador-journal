@@ -109,6 +109,25 @@ let pendingVoiceRefresh=false; // don't hot-swap during speech
 let pendingVoiceKey=null;      // apply user change at premise boundary
 const LAST_KEY='rnback_last_voice_v2';
 
+// --- Robust loader: prime + wait until voices actually appear (many browsers are lazy) ---
+async function ensureVoicesReady(maxWait=5000){
+  if(!('speechSynthesis' in window)) return [];
+  let list = voicesNow();
+  if(list.length) return list;
+  // Prime with a couple of silent utterances to force voice catalogs to hydrate
+  try{
+    for(let i=0;i<2;i++){ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); }
+  }catch(_){ }
+  // Wait for onvoiceschanged OR poll as a fallback
+  return await new Promise(resolve=>{
+    let done=false; const finish=()=>{ if(!done){ done=true; resolve(voicesNow()); } };
+    const start=Date.now();
+    const iv=setInterval(()=>{ const now=voicesNow(); if(now.length || Date.now()-start>maxWait){ clearInterval(iv); finish(); } }, 60);
+    try{ speechSynthesis.onvoiceschanged = ()=>{ const now=voicesNow(); if(now.length){ clearInterval(iv); finish(); } }; }catch(_){ }
+  });
+}
+async function hydrateVoicesAndPopulate(){ await ensureVoicesReady(); populateMenusStrict(); }
+
 const REGION_NAMES={ AE:'United Arab Emirates', AU:'Australia', GB:'United Kingdom', UK:'United Kingdom',
   US:'United States', CA:'Canada', NZ:'New Zealand', IE:'Ireland', IN:'India', ZA:'South Africa',
   PH:'Philippines', SG:'Singapore', HK:'Hong Kong', NG:'Nigeria'
@@ -331,7 +350,7 @@ function updateUI(){ $('idx').textContent=idx; $('max').textContent=MAX; $('ptyp
 /* ===================== bindings ===================== */
 $('start').onclick = async ()=>{
   if(!VOICE){
-    populateMenusStrict();
+    await hydrateVoicesAndPopulate();
     const rawPool=voicesNow();
     let pool=rawPool.filter(isExplicitFemale);
     if(!pool.length){ pool = rawPool.filter(v => /^en[-_]/i.test(v.lang||'') && !MALE_NEG.test((v.name+' '+v.voiceURI))); }
@@ -351,11 +370,11 @@ $('pauseTime').oninput=e=>{ PAUSE_SEC=+e.target.value; $('pVal').textContent=PAU
 $('rate').oninput=e=>{ RATE=+e.target.value; $('rVal').textContent=RATE+'%'; };
 
 // voice UI init
-$('refreshVoices').onclick=()=>populateMenusStrict();
-$('testVoice').onclick=async()=>{ if(!VOICE) populateMenusStrict(); await warmupTTS(); await speak('Voice check. Example: C three is north east of H seven.', VOICE); };
+$('refreshVoices').onclick=()=>hydrateVoicesAndPopulate();
+$('testVoice').onclick=async()=>{ if(!VOICE) await hydrateVoicesAndPopulate(); await warmupTTS(); await speak('Voice check. Example: C three is north east of H seven.', VOICE); };
 
 /* ===================== immediate paint ===================== */
-document.addEventListener('DOMContentLoaded', ()=>{ populateMenusStrict(); applyVoiceDefaults(); $('voiceStatus').textContent='Ready'; });
+document.addEventListener('DOMContentLoaded', ()=>{ hydrateVoicesAndPopulate(); applyVoiceDefaults(); $('voiceStatus').textContent='Ready'; });
 </script>
 </body>
 </html>
