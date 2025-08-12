@@ -1,471 +1,622 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Creative Journal - Golden Inspiration</title>
-  <!-- Updated Google Fonts link to use Nunito -->
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <style>
-    /* General Styling and Background */
-    body {
-      margin: 0;
-      /* Changed font to Nunito for better readability */
-      font-family: 'Nunito', sans-serif;
-      /* Increased base font size slightly */
-      font-size: 16px;
-      background: url('https://images.unsplash.com/photo-1552053831-71594a27632d') no-repeat center center fixed;
-      background-size: cover;
-      color: #4E342E; /* Rich brown */
-      overflow: hidden;
-    }
-
-    /* Overlay */
-    .overlay {
-      background-color: rgba(255, 248, 220, 0.2);
-      position: absolute;
-      width: 100%;
-      height: 100%;
-      z-index: 0;
-      backdrop-filter: blur(5px);
-    }
-
-    .app-container {
-      display: flex;
-      height: 100vh;
-      position: relative;
-      z-index: 1;
-    }
-
-    /* Sidebar Styling */
-    .sidebar {
-      width: 260px; /* Slightly wider sidebar for larger font */
-      background-color: rgba(255, 250, 240, 0.85);
-      backdrop-filter: blur(10px);
-      overflow-y: auto;
-      padding: 20px 10px;
-      border-right: 1px solid rgba(140, 90, 40, 0.2);
-      box-shadow: 2px 0 15px rgba(0, 0, 0, 0.2);
-    }
-
-    .tab-button {
-      display: block;
-      width: 100%;
-      padding: 12px 15px;
-      background: none;
-      border: none;
-      font-family: 'Nunito', sans-serif;
-      /* Increased font size and made bolder (ExtraBold 800) for clarity */
-      font-size: 26px;
-      font-weight: 800;
-      color: #6D4C41; /* Warm brown */
-      text-align: left;
-      cursor: pointer;
-      transition: background-color 0.3s, transform 0.2s;
-      border-radius: 8px;
-      margin-bottom: 10px;
-    }
-
-    .tab-button:hover {
-      background-color: rgba(255, 213, 79, 0.5);
-      transform: translateX(5px);
-    }
-
-    .tab-button.active {
-      background-color: #DAA520;
-      color: #fff;
-    }
-
-    /* Main Content Area */
-    .main-area {
-      flex-grow: 1;
-      display: flex;
-      flex-direction: column;
-      padding: 20px;
-      overflow-y: auto;
-    }
-
-    /* Textarea Styling */
-    #entryInput {
-      width: 100%;
-      height: 40vh;
-      /* Increased font size from 16px to 18px */
-      font-size: 18px;
-      font-family: 'Nunito', sans-serif;
-      padding: 15px;
-      margin-bottom: 15px;
-      background-color: rgba(255, 255, 255, 0.95);
-      color: #4E342E;
-      border: 1px solid #DAA520;
-      border-radius: 8px;
-      resize: none;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-      line-height: 1.5; /* Improved spacing for readability */
-    }
-
-    #entryInput::placeholder {
-      color: #A1887F;
-    }
-
-    /* Top Button Container */
-    .top-buttons {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 15px;
-    }
-
-    /* Button and Select Styling */
-    .top-buttons button, #colorPicker {
-      background-color: #FFC107;
-      border: none;
-      padding: 10px 15px;
-      margin: 5px;
-      color: #4E342E;
-      cursor: pointer;
-      border-radius: 8px;
-      transition: background-color 0.3s, transform 0.2s;
-      font-family: 'Nunito', sans-serif;
-      font-weight: 700;
-      /* Increased font size for buttons */
-      font-size: 16px;
-    }
-
-    .top-buttons button:hover {
-      background-color: #FFD54F;
-      transform: translateY(-2px);
-    }
-
-    /* Special styling for the Inspire button */
-    .inspire-button {
-        background-color: #FFA000;
-        border: none;
-        padding: 10px 15px;
-        margin: 5px;
-        color: #fff;
-        cursor: pointer;
-        border-radius: 8px;
-        transition: all 0.3s;
-        font-family: 'Nunito', sans-serif;
-        font-weight: 700;
-        font-size: 16px;
-    }
-
-    .inspire-button:hover {
-        background-color: #FFC107;
-        box-shadow: 0 0 15px #FFC107;
-        transform: translateY(-2px);
-    }
-
-
-    /* Inspiration Area */
-    .inspiration-area {
-        font-family: 'Nunito', sans-serif;
-        /* Increased font size */
-        font-size: 24px;
-        font-weight: 700;
-        text-align: center;
-        padding: 15px;
-        margin-bottom: 15px;
-        background-color: rgba(255, 235, 160, 0.7);
-        border-radius: 8px;
-        min-height: 30px;
-    }
-
-    /* History Area */
-    .history {
-      display: flex;
-      overflow-x: auto;
-      margin-top: 15px;
-      border-top: 1px solid rgba(140, 90, 40, 0.3);
-      padding-top: 15px;
-    }
-
-    .history-entry {
-      background-color: rgba(255, 255, 255, 0.7);
-      padding: 8px 12px;
-      margin-right: 10px;
-      cursor: pointer;
-      /* Increased font size from 14px to 16px */
-      font-size: 16px;
-      border-radius: 5px;
-      white-space: nowrap;
-      transition: background-color 0.3s;
-      border: 1px solid rgba(140, 90, 40, 0.2);
-    }
-
-    .history-entry:hover {
-        background-color: #FFECB3;
-    }
-
-    /* Canvas Styling */
-    canvas {
-      border: 1px solid #DAA520;
-      background-color: rgba(255, 255, 255, 0.95);
-      border-radius: 8px;
-      width: 100%;
-      height: 30vh;
-      touch-action: none;
-      cursor: crosshair;
-    }
-
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Relational N-Back — Logic-Only N-Match (Voice + Visual)</title>
+<style>
+:root { --bg:#0b0d10; --fg:#e6fbff; --a:#00ccff; --mut:#8fe7ff }
+*{ box-sizing:border-box }
+body{ font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--fg); margin:0; padding:16px }
+.wrap{ max-width:1060px; margin:0 auto }
+.row{ display:flex; gap:12px; flex-wrap:wrap }
+.col{ flex:1 1 320px }
+.box{ background:#101418; border:1px solid rgba(0,200,255,.25); border-radius:14px; padding:12px }
+.title{ font-weight:800; margin-bottom:6px; letter-spacing:.3px }
+.btn{ background:#0b0d10; color:var(--a); border:1px solid var(--a); border-radius:10px; padding:10px 14px; font-weight:700; cursor:pointer }
+.btn:disabled{ opacity:.5; cursor:not-allowed }
+label{ font-size:12px; color:var(--mut); display:block; margin:6px 0 }
+input[type=range],select{ width:100% }
+.kbd{ border:1px solid rgba(255,255,255,.25); padding:2px 6px; border-radius:6px; background:#0b0d10 }
+.mut{ color:var(--mut); font-size:12px }
+.badge{ display:inline-block; padding:2px 6px; border:1px solid rgba(0,200,255,.3); border-radius:8px; font-size:12px; color:var(--mut); margin-left:6px }
+#premiseText{ margin-top:12px; min-height:76px; background:#0e1113; border:1px solid rgba(0,200,255,.25); border-radius:12px; padding:10px; font-size:18px; line-height:1.6 }
+#premiseText .rel{ padding:0 4px; border-radius:6px }
+#premiseText .rel.active{ background:rgba(0,200,255,.20); outline:1px solid rgba(0,200,255,.45) }
+#premiseText .sep{ opacity:.65 }
+</style>
 </head>
 <body>
-  <div class="overlay"></div>
-
-  <div class="app-container">
-    <div class="sidebar" id="tabList">
-      <button class="tab-button active" onclick="switchTab('States')">States</button>
-      <button class="tab-button" onclick="switchTab('Thoughts')">Thoughts</button>
-      <button class="tab-button" onclick="switchTab('Philosophies')">Philosophies</button>
-      <button class="tab-button" onclick="switchTab('Models')">Models</button>
-      <button class="tab-button" onclick="switchTab('Goals')">Goals</button>
-      <button class="tab-button" onclick="switchTab('Objectives')">Objectives</button>
-      <button class="tab-button" onclick="switchTab('Experiments')">Experiments</button>
+<div class="wrap">
+  <div class="row">
+    <div class="col">
+      <div class="box">
+        <div class="title">Timing</div>
+        <label>N-back level: <span id="nVal">1</span></label>
+        <input id="n" type="range" min="1" max="10" value="1">
+        <label>Trials per block: <span id="tVal">40</span></label>
+        <input id="trials" type="range" min="10" max="200" step="5" value="40">
+        <label>Trial duration (ms): <span id="dVal">5000</span></label>
+        <input id="dur" type="range" min="1500" max="120000" step="250" value="5000">
+        <label>Pause between relations in the same premise (ms): <span id="pVal">1000</span></label>
+        <input id="pauseTime" type="range" min="0" max="30000" step="50" value="1000">
+        <label>Target match rate: <span id="rVal">25%</span></label>
+        <input id="rate" type="range" min="5" max="60" step="5" value="25">
+        <div class="mut">N-matches are computed <b>only</b> from relational logic (structure + vectors). Labels/text never affect matching.</div>
+      </div>
     </div>
 
-    <div class="main-area">
-        <!-- New Inspiration Area -->
-        <div class="inspiration-area" id="inspirationQuote">
-            Click 'Inspire Me' to spark your creativity!
+    <div class="col">
+      <div class="box">
+        <div class="title">Voice <span id="voiceStatus" class="badge">Ready</span></div>
+        <label>Country / Region</label>
+        <select id="regionSelect"></select>
+        <label>Voice</label>
+        <select id="voice"></select>
+        <label>Rate: <span id="rateVal">0.92</span></label>
+        <input id="vRate" type="range" min="0.7" max="1.6" step="0.01" value="0.92">
+        <label>Pitch: <span id="pitchVal">1.28</span></label>
+        <input id="vPitch" type="range" min="0.7" max="2" step="0.01" value="1.28">
+        <label>Volume: <span id="vVolVal">1.00</span></label>
+        <input id="vVol" type="range" min="0" max="1" step="0.05" value="1.0">
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button id="testVoice" class="btn" type="button">Test voice</button>
+          <button id="preloadVoices" class="btn" type="button">Preload / Verify</button>
         </div>
-
-      <div class="top-buttons">
-        <div>
-            <button onclick="saveEntry()">💾 Save</button>
-            <button onclick="clearEntry()">🧼 Clear Text</button>
-            <button onclick="clearCanvas()">🎨 Clear Canvas</button>
-             <button class="inspire-button" onclick="getInspiration()">💡 Inspire Me</button>
-        </div>
-        <div>
-            <!-- Updated font and size for the label -->
-            <label for="colorPicker" style="font-family: 'Nunito', sans-serif; font-size: 20px; font-weight: 700; color: #4E342E; background-color: rgba(255,255,255,0.5); padding: 5px 10px; border-radius: 5px;">Draw Color:</label>
-            <select id="colorPicker">
-                <!-- Default drawing color set to a rich brown -->
-                <option value="#4E342E">Rich Brown</option>
-                <option value="black">Black</option>
-                <option value="red">Red</option>
-                <option value="green">Green</option>
-                <option value="blue">Blue</option>
-                <option value="orange">Orange</option>
-                <option value="purple">Purple</option>
-                <option value="pink">Pink</option>
-                <option value="teal">Teal</option>
-                <option value="white">White</option>
-            </select>
-        </div>
+        <div class="mut">Tip: choose a local region (e.g., Australia) for clear pronunciation.</div>
       </div>
+    </div>
 
-      <textarea id="entryInput" placeholder="What's on your mind? Let your creativity flow..."></textarea>
-      <canvas id="drawCanvas"></canvas>
-
-      <div class="history" id="historyTabs"></div>
+    <div class="col">
+      <div class="box">
+        <div class="title">Controls / Status</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+          <button id="start" class="btn">▶ Start</button>
+          <button id="pause" class="btn" disabled>⏸ Pause</button>
+          <button id="reset" class="btn" disabled>🔄 Reset</button>
+          <button id="hit" class="btn" disabled>✓ Match (<span class="kbd">M</span>)</button>
+          <button id="skip" class="btn" disabled>⏭ Skip</button>
+        </div>
+        <div class="mut" style="margin-top:8px">
+          Trial <span id="idx">0</span>/<span id="max">40</span> • Planned: <span id="ptype">—</span> • Actual: <span id="isMatch">—</span>
+        </div>
+        <div class="mut">Correct: <span id="corr">0</span> • Errors: <span id="err">0</span></div>
+      </div>
     </div>
   </div>
 
-  <script>
-    // Initialize state and elements
-    let currentTab = 'States';
-    // Use a unique localStorage key (V7)
-    let entries = JSON.parse(localStorage.getItem('creativeEntriesV7') || '{}');
-    const entryInput = document.getElementById('entryInput');
-    const historyTabs = document.getElementById('historyTabs');
-    const drawCanvas = document.getElementById('drawCanvas');
-    const ctx = drawCanvas.getContext('2d');
-    const inspirationQuote = document.getElementById('inspirationQuote');
-    let drawing = false;
-    let color = "#4E342E"; // Default color Rich Brown
+  <div class="box" style="margin-top:12px">
+    <div class="title">Premise (spoken + visual)</div>
+    <div id="premiseText" aria-live="polite">—</div>
+  </div>
+</div>
 
-    const quotes = [
-        "Creativity is intelligence having fun. – Albert Einstein",
-        "You can't use up creativity. The more you use, the more you have. – Maya Angelou",
-        "The chief enemy of creativity is 'good' sense. – Pablo Picasso",
-        "To live a creative life, we must lose our fear of being wrong. – Joseph Chilton Pearce",
-        "Happiness is a warm puppy. – Charles M. Schulz",
-        "Creativity takes courage. – Henri Matisse",
-        "The world would be a nicer place if everyone had the ability to love as unconditionally as a dog. – M.K. Clinton",
-        "Everything you can imagine is real. – Pablo Picasso"
-    ];
+<script>
+/* ========== helpers ========== */
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
 
-    function getInspiration() {
-        const randomIndex = Math.floor(Math.random() * quotes.length);
-        inspirationQuote.textContent = quotes[randomIndex];
+/* ========== FEMALE-ONLY voice system with truthful labels + UAE bucket ========== */
+/* Strategy:
+   - Filter out males hard (vendor “Male”, male-name patterns).
+   - Keep only voices with strong female cues (explicit “Female”, known female voice names, or ar-AE/en-AE for UAE).
+   - Display names truthfully:
+       • If vendor name contains a known female name token, use that token.
+       • Else generate a stable single female name from a region pool (hashed by voice key), *only* for voices that passed strict female cues.
+   - Instant UI from cache; fast engine scan; background verification to keep only working voices.
+*/
+let VOICE=null, voicesReady=false;
+let userRateChanged=false, userPitchChanged=false;
+
+const REGION_NAMES={
+  AE:'United Arab Emirates', AU:'Australia', GB:'United Kingdom', UK:'United Kingdom',
+  US:'United States', CA:'Canada', NZ:'New Zealand', IE:'Ireland', IN:'India',
+  ZA:'South Africa', PH:'Philippines', SG:'Singapore', HK:'Hong Kong', NG:'Nigeria'
+};
+const regionCode=lang=>(String(lang).match(/^[a-z]{2,3}[-_]?([A-Z]{2})/)||[])[1]||'';
+const regionName=lang=>{
+  const code=regionCode(lang);
+  if(code==='AE') return 'United Arab Emirates';
+  return REGION_NAMES[code] || (/^en\b/i.test(lang)?'Global English':'Other Region');
+};
+
+const vKey=v=>v.voiceURI||(v.name+'|'+v.lang);
+function setStatus(t){ const el=$('voiceStatus'); if(el) el.textContent=t; }
+function clearStatus(){ setStatus('Ready'); }
+
+/* Male / female cues */
+const MALE_NEG=/\b(male|boy|man|daniel|david|george|michael|mark|tom|fred|brian|kevin|liam|adam|andy|ben|bruce|charles|chris|eric|frank|jack|john|luke|matt|mike|nathan|paul|peter|ryan|steve|tim|alex(?!a)|james|william|robert|andrew|henry|richard|pablo|ricardo|mateo)\b/i;
+/* Strong female indicators: vendor says “Female” or known female voice tokens across engines */
+const FEMALE_STRONG=/\b(female|zira|samantha|karen|moira|tessa|serena|veena|victoria|joanna|jenny|aria|jessa|kimberly|kendra|ivy|nicole|salli|olivia|ella|ava|amy|emma|mia|sophia|isabella|noor|nour|layla|leila|hala|mariam|salma|dana|rania|yasmin|yasmine|amal|reem|farah|natasha|catherine|allison|chloe|grace|zoe|sarah|sofia|camila|paulina|luciana|monica|monika|anna|tatyana|zhiyu)\b/i;
+
+/* Region female name pools for stable single-name labels (used only after passing FEMALE_STRONG) */
+const POOLS={
+ 'United Arab Emirates':['Layla','Noor','Hala','Mariam','Salma','Dana','Rania','Yasmin','Amal','Leila'],
+ 'Australia':['Zoe','Isla','Mia','Sophie','Olivia','Ava','Ella','Grace','Ruby','Lily'],
+ 'United Kingdom':['Sophie','Amelia','Olivia','Grace','Ava','Emily','Isla','Lucy','Chloe','Mia'],
+ 'United States':['Amy','Emma','Ava','Mia','Sophia','Isabella','Olivia','Ella','Zoe','Grace'],
+ 'Canada':['Sophie','Chloe','Amelia','Maya','Ella','Zoe','Olivia','Emma','Ava','Mia'],
+ 'Ireland':['Aoife','Saoirse','Niamh','Aisling','Ciara','Orla','Molly','Katie','Ella','Chloe'],
+ 'New Zealand':['Aria','Isla','Olivia','Ava','Emily','Sophie','Mia','Zoe','Ella','Grace'],
+ 'South Africa':['Tessa','Leah','Olivia','Mia','Ava','Ella','Zoe','Grace','Ruby','Chloe'],
+ 'India':['Aisha','Anaya','Diya','Ira','Kavya','Kiara','Maya','Riya','Sara','Ishita'],
+ 'Philippines':['Althea','Ariana','Bianca','Clara','Elena','Hannah','Isabella','Julia','Mika','Sofia'],
+ 'Singapore':['Alyssa','Cheryl','Clara','Elise','Hazel','Jade','Mei','Nicole','Sabrina','Tara'],
+ 'Hong Kong':['Anna','Cathy','Iris','Joyce','Lily','Mandy','Nina','Queenie','Vicky','Yuki'],
+ 'Nigeria':['Ada','Amara','Chioma','Ifunanya','Ijeoma','Kachi','Nkem','Nkechi','Ola','Zainab'],
+ 'Global English':['Amy','Ella','Zoe','Mia','Ava','Sophie','Lily','Ruby','Grace','Chloe'],
+ 'Other Region':['Amy','Ella','Zoe','Mia','Ava','Sophie','Lily','Ruby','Grace','Chloe']
+};
+
+/* Derive a truthful single-name label:
+   1) If vendor name contains a known female token (FEMALE_STRONG), pick that token (proper-cased).
+   2) Else hash the voice key to pick a stable female name from the region pool (but only because it already passed FEMALE_STRONG or ar-AE).
+*/
+function properCase(s){ return s.charAt(0).toUpperCase()+s.slice(1).toLowerCase(); }
+function extractFemaleToken(name){
+  const lower = name.toLowerCase();
+  const tokens = ['zira','samantha','karen','moira','tessa','serena','veena','victoria','joanna','jenny','aria','jessa','kimberly','kendra','ivy','nicole','salli','olivia','ella','ava','amy','emma','mia','sophia','isabella','noor','nour','layla','leila','hala','mariam','salma','dana','rania','yasmin','yasmine','amal','reem','farah','natasha','catherine','allison','chloe','grace','zoe','sarah','sofia','camila','paulina','luciana','monica','anna','tatyana','zhiyu'];
+  for(const t of tokens){ if(lower.includes(t)) return properCase(t); }
+  // Also catch patterns like "Google UK English Female" where a human name isn't present
+  if(/\bfemale\b/i.test(name)) return null; // will fall back to pool
+  return null;
+}
+function hashInt(str){ let h=0; for(let i=0;i<str.length;i++) h=(h*31 + str.charCodeAt(i))>>>0; return h>>>0; }
+function labelForVoice(v){
+  const region = regionName(v.lang);
+  const tok = extractFemaleToken(v.name || v.voiceURI || '');
+  if(tok) return tok; // truthful token found in engine name
+  const pool = POOLS[region] || POOLS['Other Region'];
+  const idx = hashInt(vKey(v)) % pool.length;
+  return pool[idx];
+}
+
+/* Cache of verified working voices for instant reuse */
+const CACHE_KEY='rnback_voice_ok_v5';
+function loadCache(){ try{return JSON.parse(localStorage.getItem(CACHE_KEY)||'{}');}catch(_){return{};} }
+function saveCache(obj){ try{localStorage.setItem(CACHE_KEY,JSON.stringify(obj));}catch(_){} }
+const okCache=loadCache(); // { key: {ts,name,lang} }
+
+async function getEngineVoices(maxWait=900){
+  if(!('speechSynthesis' in window)) return [];
+  // wake
+  try{ const u=new SpeechSynthesisUtterance(''); u.volume=0; u.rate=10; speechSynthesis.speak(u);}catch(_){}
+  const start=performance.now();
+  return new Promise(resolve=>{
+    const poll=setInterval(()=>{
+      const v=speechSynthesis.getVoices();
+      if(v.length || performance.now()-start>maxWait){ clearInterval(poll); resolve(v); }
+    },50);
+    speechSynthesis.onvoiceschanged=()=>{ resolve(speechSynthesis.getVoices()); };
+  });
+}
+
+/* Hard filter: no male terms; then require FEMALE_STRONG or UAE language hint */
+function filterFemaleVoices(raw){
+  return raw.filter(v=>{
+    const label=(v.name+' '+v.voiceURI).toLowerCase();
+    if(MALE_NEG.test(label)) return false;
+    if(/\bmale\b/.test(label)) return false;
+    const isUAE = /^(ar|en)[-_]?AE$/i.test(v.lang);
+    if(FEMALE_STRONG.test(label) || /\bfemale\b/i.test(label) || isUAE) return true;
+    // Unknown gender → exclude to avoid mismatched female name on a male voice
+    return false;
+  }).sort((a,b)=>{
+    // Prefer ar-AE first, then en-AU/GB/US, then others; then by presence of explicit 'female'
+    const prio = (v)=> ( /AE$/i.test(v.lang)?3 : /^en[-_](AU|GB|US)/i.test(v.lang)?2 : 1 ) + (/\bfemale\b/i.test(v.name)?0.2:0) + (FEMALE_STRONG.test((v.name+' '+v.voiceURI))?0.1:0);
+    return prio(b)-prio(a);
+  });
+}
+
+function regionListFrom(voices){ return [...new Set(voices.map(v=>regionName(v.lang)))].sort(); }
+
+function populateRegions(voices){
+  const regions=regionListFrom(voices);
+  const sel=$('regionSelect'); sel.innerHTML='';
+  regions.forEach(r=>{ const o=document.createElement('option'); o.value=r; o.textContent=r; sel.appendChild(o); });
+  for(const pref of ['United Arab Emirates','Australia','United Kingdom','United States']){
+    if(regions.includes(pref)){ sel.value=pref; break; }
+  }
+  if(!sel.value && regions.length) sel.value=regions[0];
+}
+
+function populateVoicesForRegion(voices){
+  const region=$('regionSelect').value;
+  const list=voices.filter(v=>regionName(v.lang)===region);
+  const sel=$('voice'); sel.innerHTML='';
+  list.forEach(v=>{
+    const o=document.createElement('option');
+    o.value=vKey(v);
+    o.textContent=labelForVoice(v);      // truthful / stable single name
+    o.title=`${v.name} — ${region} — ${v.lang}`;
+    sel.appendChild(o);
+  });
+  const best=list[0]||null;
+  if(best){ sel.value=vKey(best); bindEngineVoice(best); applyFeminineDefaultsIfUntouched(); }
+}
+
+function bindEngineVoice(v){
+  const all=speechSynthesis.getVoices();
+  const real=all.find(ev=>vKey(ev)===vKey(v));
+  VOICE = real || v;
+}
+
+function applyFeminineDefaultsIfUntouched(){
+  if(!userRateChanged){ $('vRate').value=0.92; $('rateVal').textContent='0.92'; }
+  if(!userPitchChanged){ $('vPitch').value=1.28; $('pitchVal').textContent='1.28'; }
+}
+
+/* Instant UI from cache (verified-only) */
+function tryInstantFromCache(){
+  const keys=Object.keys(okCache);
+  if(!keys.length) return false;
+  const stub=keys.map(k=>({name:okCache[k].name||k, lang:okCache[k].lang||'en-US', voiceURI:k}));
+  const females=filterFemaleVoices(stub);
+  if(!females.length) return false;
+  populateRegions(females);
+  populateVoicesForRegion(females);
+  return true;
+}
+
+/* Fast engine pull + populate (no blocking) */
+async function fastPopulateFromEngine(){
+  setStatus('Loading…');
+  const raw=await getEngineVoices(900);
+  const females=filterFemaleVoices(raw);
+  if(!females.length){ setStatus('No voices'); return; }
+  populateRegions(females);
+  populateVoicesForRegion(females);
+  clearStatus();
+}
+
+/* Verify with concurrency; keep only voices that actually start/end (muted) */
+function verifyVoiceWorks(v, timeout=600){
+  return new Promise(res=>{
+    let done=false;
+    const u=new SpeechSynthesisUtterance('verify');
+    u.voice=v; u.lang=v.lang; u.volume=0; u.rate=1; u.pitch=1;
+    const finish=(ok)=>{ if(!done){ done=true; try{speechSynthesis.cancel();}catch(_){ } res(ok);} };
+    const to=setTimeout(()=>finish(false), timeout);
+    u.onstart=()=>{ clearTimeout(to); finish(true); };
+    u.onend=()=>{ clearTimeout(to); finish(true); };
+    u.onerror=()=>{ clearTimeout(to); finish(false); };
+    try{ speechSynthesis.speak(u); }catch(_){ clearTimeout(to); finish(false); }
+  });
+}
+async function verifyAndUpgrade(concurrency=12){
+  const all=filterFemaleVoices(speechSynthesis.getVoices());
+  if(!all.length) return;
+  setStatus('Verifying…');
+  let i=0; const ok=[];
+  async function worker(){
+    while(i<all.length){
+      const v=all[i++], key=vKey(v);
+      const cached=okCache[key]; if(cached && Date.now()-cached.ts<7*24*3600*1000){ ok.push(v); continue; }
+      /* eslint-disable no-await-in-loop */
+      const good=await verifyVoiceWorks(v, 600);
+      if(good){ ok.push(v); okCache[key]={ts:Date.now(), name:v.name, lang:v.lang}; }
     }
+  }
+  await Promise.all(Array(Math.min(concurrency, all.length)).fill(0).map(worker));
+  saveCache(okCache);
+  if(ok.length){ populateRegions(ok); populateVoicesForRegion(ok); }
+  clearStatus();
+}
 
-    function switchTab(tab) {
-      currentTab = tab;
-      document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
-      Array.from(document.querySelectorAll('.tab-button')).find(b => b.textContent === tab).classList.add('active');
-      entryInput.value = '';
-      clearCanvas();
-      loadEntries();
-    }
+/* Public hooks */
+$('preloadVoices').onclick=async()=>{ await getEngineVoices(900); await verifyAndUpgrade(12); };
+$('testVoice').onclick=async()=>{ await getEngineVoices(900); await speak('Voice check. Example: C three is north of H seven.'); };
+$('regionSelect').onchange=()=>populateVoicesForRegion(filterFemaleVoices(speechSynthesis.getVoices()));
+$('voice').onchange=()=>{
+  const key=$('voice').value;
+  const all=speechSynthesis.getVoices();
+  const found=all.find(v=>vKey(v)===key);
+  if(found) VOICE=found;
+};
+$('vRate').oninput=e=>{ userRateChanged=true; $('rateVal').textContent=(+e.target.value).toFixed(2); };
+$('vPitch').oninput=e=>{ userPitchChanged=true; $('pitchVal').textContent=(+e.target.value).toFixed(2); };
+$('vVol').oninput=e=>{ $('vVolVal').textContent=(+e.target.value).toFixed(2); };
 
-    // Updated saveEntry to include drawings
-    function saveEntry() {
-      const text = entryInput.value.trim();
-      const drawingData = drawCanvas.toDataURL();
-
-      if (!text && isCanvasBlank()) {
-          alert("Entry is empty. Please write or draw something.");
-          return;
+/* Init voices: instant cache → fast engine → background verify (non-blocking) */
+document.addEventListener('DOMContentLoaded', ()=>{
+  const ok=tryInstantFromCache();
+  fastPopulateFromEngine().then(()=>{/* upgraded quickly */});
+  if('speechSynthesis' in window){
+    speechSynthesis.onvoiceschanged = ()=>{
+      const raw=speechSynthesis.getVoices();
+      if(raw && raw.length){
+        const females=filterFemaleVoices(raw);
+        if(females.length){ populateRegions(females); populateVoicesForRegion(females); }
       }
+    };
+  }
+  voicesReady=true; clearStatus();
+});
 
-      if (!entries[currentTab]) entries[currentTab] = [];
-      
-      const timestamp = new Date().toLocaleString();
-      entries[currentTab].push({ text, drawing: drawingData, date: timestamp });
-      localStorage.setItem('creativeEntriesV7', JSON.stringify(entries));
-      entryInput.value = '';
-      clearCanvas();
-      loadEntries();
+/* ========== Relational logic (strict isomorphism; labels ignored) ========== */
+const DIRS={
+  north:{x:0,y:-1}, south:{x:0,y:1}, east:{x:1,y:0}, west:{x:-1,y:0},
+  northeast:{x:1,y:-1}, northwest:{x:-1,y:-1}, southeast:{x:1,y:1}, southwest:{x:-1,y:1}
+};
+const HORIZ=Object.keys(DIRS);
+const LEVELS=[1,2,3];
+const LETTERS='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const token=()=> LETTERS[Math.floor(Math.random()*26)] + (1+Math.floor(Math.random()*9));
+function uniqueTokens(k){ const s=new Set(); while(s.size<k) s.add(token()); return [...s]; }
+
+function parsePremise(sentence){
+  const parts=String(sentence).split(/\s+and\s+/i).map(p=>p.trim()).filter(Boolean);
+  const edges=[]; const nodes=new Set();
+  for(const part of parts){
+    let m=part.match(/^([A-Z]\d+)\s+is\s+(one|two|three|1|2|3)\s*(?:levels?)?\s+(above|below)\s+(?:of\s+)?([A-Z]\d+)$/i);
+    if(m){
+      const from=m[1], to=m[4];
+      const nTxt=m[2].toLowerCase();
+      const n=nTxt==='one'?1:nTxt==='two'?2:nTxt==='three'?3:+nTxt;
+      const z=m[3].toLowerCase()==='above'? n : -n;
+      edges.push({u:from,v:to,rel:{x:0,y:0,z}});
+      nodes.add(from); nodes.add(to);
+      continue;
     }
-
-    function loadEntries() {
-      historyTabs.innerHTML = '';
-      if (!entries[currentTab]) return;
-      // Display newest entries first
-      entries[currentTab].slice().reverse().forEach((e, index) => {
-        const actualIndex = entries[currentTab].length - 1 - index;
-        const tab = document.createElement('div');
-        tab.className = 'history-entry';
-        tab.textContent = e.date;
-        tab.onclick = () => loadSpecificEntry(e);
-        
-        // Right-click to delete
-        tab.oncontextmenu = (ev) => {
-          ev.preventDefault();
-          if (confirm('Delete this entry?')) {
-            entries[currentTab].splice(actualIndex, 1);
-            localStorage.setItem('creativeEntriesV7', JSON.stringify(entries));
-            loadEntries();
-            entryInput.value = '';
-            clearCanvas();
-          }
-        };
-        historyTabs.appendChild(tab);
-      });
+    m=part.match(/^([A-Z]\d+)\s+is\s+(north(?:east|west)?|south(?:east|west)?|east|west)\s+of\s+([A-Z]\d+)$/i);
+    if(m){
+      const from=m[1], to=m[3], dir=m[2].toLowerCase();
+      const vec=DIRS[dir]; if(!vec) continue;
+      edges.push({u:from,v:to,rel:{x:vec.x,y:vec.y,z:0}});
+      nodes.add(from); nodes.add(to);
+      continue;
     }
+  }
+  return {nodes:[...nodes], edges};
+}
+function edgeKey(e){ return `${e.u}->${e.v}|${e.rel.x},${e.rel.y},${e.rel.z}`; }
+function edgesToString(edges){ return edges.map(edgeKey).sort().join('||'); }
+function permutations(arr){
+  const res=[], used=Array(arr.length).fill(false), path=[];
+  (function dfs(){
+    if(path.length===arr.length){ res.push(path.slice()); return; }
+    for(let i=0;i<arr.length;i++){ if(used[i])continue; used[i]=true; path.push(arr[i]); dfs(); path.pop(); used[i]=false; }
+  })();
+  return res;
+}
+function sentencesCompatible(a,b){
+  const A=parsePremise(a), B=parsePremise(b);
+  if(A.edges.length!==B.edges.length) return false;
+  if(A.nodes.length!==B.nodes.length) return false;
+  const Akey=edgesToString(A.edges);
+  const nodesA=A.nodes.slice().sort();
+  const nodesB=B.nodes.slice().sort();
+  for(const perm of permutations(nodesA)){
+    const map=new Map(); for(let i=0;i<nodesB.length;i++) map.set(nodesB[i], perm[i]);
+    const mapped=B.edges.map(e=>({u:map.get(e.u), v:map.get(e.v), rel:e.rel}));
+    if(edgesToString(mapped)===Akey) return true;
+  }
+  return false;
+}
 
-    // Function to load a specific entry's text and drawing
-    function loadSpecificEntry(entry) {
-        entryInput.value = entry.text;
-        const img = new Image();
-        img.onload = function() {
-            clearCanvas();
-            ctx.drawImage(img, 0, 0);
-        };
-        if (entry.drawing) {
-            img.src = entry.drawing;
-        } else {
-            clearCanvas();
-        }
+function clauseString(from, rel, to){
+  if(rel.z && rel.z!==0){
+    const n=Math.abs(rel.z), word=n===1?'one level':n===2?'two levels':'three levels';
+    return `${from} is ${word} ${rel.z>0?'above':'below'} ${to}`;
+  } else {
+    const dir=(rel.x===0&&rel.y===-1)?'north':(rel.x===0&&rel.y===1)?'south':(rel.x===1&&rel.y===0)?'east':(rel.x===-1&&rel.y===0)?'west':(rel.x===1&&rel.y===-1)?'northeast':(rel.x===-1&&rel.y===-1)?'northwest':(rel.x===1&&rel.y===1)?'southeast':'southwest';
+    return `${from} is ${dir} of ${to}`;
+  }
+}
+function randomPremise(){
+  const [A,B,C]=uniqueTokens(3);
+  const pick=()=> Math.random()<0.6 ? {k:'h',d:HORIZ[Math.floor(Math.random()*HORIZ.length)]}
+                                    : {k:'v',n:LEVELS[Math.floor(Math.random()*LEVELS.length)],up:Math.random()<0.5};
+  const c=(X,r,Y)=> r.k==='h' ? `${X} is ${r.d} of ${Y}` : `${X} is ${r.n} ${r.n===1?'level':'levels'} ${r.up?'above':'below'} ${Y}`;
+  const r1=pick(), r2=pick();
+  return `${c(A,r1,B)} and ${c(B,r2,C)}`;
+}
+function buildCompatible(sentence){
+  const P=parsePremise(sentence);
+  const uniq=[...new Set(P.edges.flatMap(e=>[e.u,e.v]))].length;
+  const labels=uniqueTokens(uniq);
+  const map=new Map(); let i=0;
+  const parts=P.edges.map(({u,v,rel})=>{
+    if(!map.has(u)) map.set(u,labels[i++]);
+    if(!map.has(v)) map.set(v,labels[i++]);
+    return clauseString(map.get(u),rel,map.get(v));
+  });
+  for(let j=parts.length-1;j>0;j--){ const k=Math.floor(Math.random()*(j+1)); [parts[j],parts[k]]=[parts[k],parts[j]]; }
+  return parts.join(' and ');
+}
+
+/* ========== Verbalization for TTS ========== */
+function sayToken(tok){
+  const m=tok.match(/^([A-Z])(\d+)$/); if(!m) return tok;
+  const digits={'0':'zero','1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine'};
+  return `${m[1]} ${m[2].split('').map(d=>digits[d]||d).join(' ')}`;
+}
+function splitDiag(dir){ return dir.replace(/northeast/gi,'north east').replace(/northwest/gi,'north west').replace(/southeast/gi,'south east').replace(/southwest/gi,'south west'); }
+function verbalizeClause(clause){
+  let m=clause.match(/^([A-Z]\d+)\s+is\s+(one|two|three|1|2|3)\s*(?:levels?)?\s+(above|below)\s+(?:of\s+)?([A-Z]\d+)$/i);
+  if(m){
+    const left=sayToken(m[1]);
+    const n=+({one:1,two:2,three:3}[m[2].toLowerCase()] ?? m[2]);
+    const word=n===1?'one level':n===2?'two levels':'three levels';
+    const right=sayToken(m[4]);
+    return `${left} is ${word} ${m[3].toLowerCase()} ${right}`;
+  }
+  m=clause.match(/^([A-Z]\d+)\s+is\s+(north(?:east|west)?|south(?:east|west)?|east|west)\s+of\s+([A-Z]\d+)$/i);
+  if(m){ return `${sayToken(m[1])} is ${splitDiag(m[2])} of ${sayToken(m[3])}`; }
+  return clause;
+}
+function verbalizeSentence(s){ return s.split(/\s+and\s+/i).map(p=>verbalizeClause(p.trim())); }
+
+/* ========== Gameplay loop ========== */
+let N=1, MAX=40, DUR=5000, REL_PAUSE=1000, RATE=25;
+let idx=0, running=false, paused=false;
+let waitTimer=null, remainderTimer=null;
+const history=[], planned=[];
+let correct=0, errors=0;
+let spokenParts=null, clauseIdx=0, trialStart=0;
+
+function planSequence(){ planned.length=0; for(let i=0;i<MAX;i++){ planned.push(i>=N && Math.random()*100<RATE); } }
+function isActualMatch(i){ return i>=N && sentencesCompatible(history[i-N], history[i]); }
+
+function buildPremiseVisual(raw){
+  const parts=raw.split(/\s+and\s+/i).map(p=>p.trim());
+  const el=$('premiseText'); el.innerHTML='';
+  parts.forEach((part,i)=>{
+    const sp=document.createElement('span'); sp.className='rel'; sp.textContent=part; el.appendChild(sp);
+    if(i<parts.length-1){ const sep=document.createElement('span'); sep.className='sep'; sep.textContent=' and '; el.appendChild(sep); }
+  });
+  return parts;
+}
+function setActivePart(i){ [...$('premiseText').querySelectorAll('.rel')].forEach((n,idx)=>n.classList.toggle('active', idx===i)); }
+
+function speak(text){
+  return new Promise(res=>{
+    if(!VOICE || !('speechSynthesis' in window)){ res(); return; }
+    const u=new SpeechSynthesisUtterance(text);
+    u.voice=VOICE; u.lang=VOICE.lang;
+    u.rate=+$('vRate').value; u.pitch=+$('vPitch').value; u.volume=+$('vVol').value;
+    u.onend=res; u.onerror=res; speechSynthesis.speak(u);
+  });
+}
+function cancelSpeech(){ try{ speechSynthesis.cancel(); }catch(_){} }
+
+async function speakPremise(effectiveDur){
+  if(!spokenParts) return;
+  if(!trialStart) trialStart=performance.now();
+  while(running && !paused && clauseIdx<spokenParts.length){
+    setActivePart(clauseIdx);
+    await speak(spokenParts[clauseIdx]+'.');
+    if(!running || paused) return;
+    if(clauseIdx<spokenParts.length-1){
+      await new Promise(res=>{ waitTimer=setTimeout(()=>{waitTimer=null; res(); }, REL_PAUSE); });
+      if(!running || paused) return;
     }
+    clauseIdx++;
+  }
+  setActivePart(-1);
+  const elapsed=performance.now()-trialStart;
+  const remaining=Math.max(0, effectiveDur-elapsed);
+  await new Promise(res=>{ remainderTimer=setTimeout(()=>{remainderTimer=null; res(); }, remaining); });
+}
 
-    function clearEntry() {
-      entryInput.value = '';
+function nextPremiseString(){
+  const want=planned[idx] && idx>=N;
+  if(want) return buildCompatible(history[idx-N]);
+  let s, tries=0;
+  do{ s=randomPremise(); tries++; } while(idx>=N && sentencesCompatible(history[idx-N], s) && tries<300);
+  if(idx>=N && sentencesCompatible(history[idx-N], s)){
+    const P=parsePremise(s);
+    if(P.edges.length){
+      const e=P.edges[0];
+      if(e.rel.z){ e.rel.z*=-1; } else { e.rel.x*=-1; e.rel.y*=-1; }
+      s=P.edges.map(ed=>clauseString(ed.u, ed.rel, ed.v)).join(' and ');
     }
+  }
+  return s;
+}
 
-    function clearCanvas() {
-        ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+async function runTrial(){
+  if(!running || paused) return;
+  if(idx>=MAX){ stop(); return; }
+  const s=nextPremiseString();
+  history[idx]=s;
+  buildPremiseVisual(s);
+  spokenParts=verbalizeSentence(s);
+  clauseIdx=0; trialStart=performance.now();
+  const minNeeded=(spokenParts.length-1)*REL_PAUSE + 500;
+  const effectiveDur=Math.max(DUR, minNeeded);
+  await speakPremise(effectiveDur);
+  if(!running || paused) return;
+  idx++; updateUI(); runTrial();
+}
+
+async function ensureFastVoice(){
+  // Prefer cached verified
+  const keys=Object.keys(okCache);
+  if(keys.length){
+    const key=keys[0];
+    const found=speechSynthesis.getVoices().find(v=>vKey(v)===key);
+    if(found){ VOICE=found; applyFeminineDefaultsIfUntouched(); return; }
+  }
+  // Else pick first filtered female from engine
+  const all=speechSynthesis.getVoices();
+  const females=filterFemaleVoices(all);
+  if(females.length){ VOICE=females[0]; applyFeminineDefaultsIfUntouched(); }
+}
+
+function start(){
+  if(running) return;
+  running=true; paused=false; cancelSpeech();
+  planSequence(); idx=0; correct=0; errors=0; updateUI();
+  $('pause').disabled=false; $('reset').disabled=false; $('hit').disabled=false; $('skip').disabled=false;
+  $('regionSelect').disabled=true; $('voice').disabled=true;
+  runTrial();
+}
+function stop(){
+  running=false; paused=false;
+  clearTimeout(waitTimer); waitTimer=null;
+  clearTimeout(remainderTimer); remainderTimer=null;
+  trialStart=0; spokenParts=null; clauseIdx=0;
+  cancelSpeech();
+  $('pause').disabled=true; $('skip').disabled=true;
+  $('regionSelect').disabled=false; $('voice').disabled=false;
+}
+function togglePause(){
+  if(!running && !paused) return;
+  if(!paused){
+    paused=true; clearTimeout(waitTimer); waitTimer=null; clearTimeout(remainderTimer); remainderTimer=null; cancelSpeech();
+    $('pause').textContent='▶ Resume';
+  } else {
+    paused=false; $('pause').textContent='⏸ Pause';
+    const minNeeded=(spokenParts?.length? (spokenParts.length-1)*REL_PAUSE+500 : 0);
+    const remaining=Math.max(0, Math.max(DUR,minNeeded) - (performance.now()-trialStart));
+    if(spokenParts && clauseIdx<spokenParts.length){
+      speakPremise(Math.max(DUR,minNeeded)).then(()=>{ if(running && !paused){ idx++; updateUI(); runTrial(); } });
+    } else {
+      remainderTimer=setTimeout(()=>{ if(running && !paused){ idx++; updateUI(); runTrial(); } }, remaining);
     }
+  }
+}
+function reset(){
+  stop(); $('start').disabled=false; $('pause').textContent='⏸ Pause';
+  idx=0; correct=0; errors=0; $('premiseText').textContent='—'; updateUI();
+}
+function registerHit(){ if(!running) return; if(isActualMatch(idx)) correct++; else errors++; updateUI(); }
+function skip(){ if(!running) return; clearTimeout(waitTimer); clearTimeout(remainderTimer); cancelSpeech(); idx++; updateUI(); runTrial(); }
+function updateUI(){
+  $('idx').textContent=idx; $('max').textContent=MAX;
+  $('ptype').textContent = planned[idx] && idx>=N ? 'planned MATCH' : 'planned NON-match';
+  $('isMatch').textContent = idx>=N ? String(isActualMatch(idx)).toUpperCase() : '—';
+  $('corr').textContent=correct; $('err').textContent=errors;
+  $('nVal').textContent=N; $('tVal').textContent=MAX; $('dVal').textContent=DUR; $('pVal').textContent=REL_PAUSE; $('rVal').textContent=RATE+'%';
+}
 
-    // Helper function to check if canvas is blank
-    function isCanvasBlank() {
-        const blank = document.createElement('canvas');
-        blank.width = drawCanvas.width;
-        blank.height = drawCanvas.height;
-        return drawCanvas.toDataURL() === blank.toDataURL();
-    }
+/* ========== bindings & fast start ========== */
+$('start').onclick = async ()=>{
+  await ensureFastVoice();           // instant audio
+  // user gesture → verify in background and upgrade menu to verified-only
+  verifyAndUpgrade(12).catch(()=>{});
+  start();
+};
+$('pause').onclick=togglePause;
+$('reset').onclick=reset;
+$('hit').onclick=registerHit;
+$('skip').onclick=skip;
+window.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='m') registerHit(); });
 
-    function resizeCanvas() {
-      // Store current drawing before resizing
-      let data = null;
-      if (drawCanvas.width > 0 && drawCanvas.height > 0 && !isCanvasBlank()) {
-        data = drawCanvas.toDataURL();
-      }
-      
-      drawCanvas.width = drawCanvas.clientWidth;
-      drawCanvas.height = drawCanvas.clientHeight;
-      
-      // Redraw stored image after resizing
-      if (data) {
-          const img = new Image();
-            img.onload = function() {
-                ctx.drawImage(img, 0, 0);
-            };
-          img.src = data;
-      }
-    }
-
-    window.addEventListener('resize', resizeCanvas);
-    
-
-    // --- Drawing functionality with Mouse and Touch support ---
-    function getMousePos(canvas, evt) {
-        const rect = canvas.getBoundingClientRect();
-        return {
-            x: evt.clientX - rect.left,
-            y: evt.clientY - rect.top
-        };
-    }
-
-    function getTouchPos(canvas, evt) {
-        const rect = canvas.getBoundingClientRect();
-        return {
-            x: evt.touches[0].clientX - rect.left,
-            y: evt.touches[0].clientY - rect.top
-        };
-    }
-
-    function startDrawing(pos) {
-        drawing = true;
-        ctx.beginPath();
-        ctx.moveTo(pos.x, pos.y);
-    }
-
-    function draw(pos) {
-        if (!drawing) return;
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        ctx.lineCap = 'round'; // Smoother lines
-        ctx.lineTo(pos.x, pos.y);
-        ctx.stroke();
-    }
-
-    // Mouse events
-    drawCanvas.addEventListener('mousedown', e => startDrawing(getMousePos(drawCanvas, e)));
-    drawCanvas.addEventListener('mousemove', e => draw(getMousePos(drawCanvas, e)));
-    drawCanvas.addEventListener('mouseup', () => drawing = false);
-    drawCanvas.addEventListener('mouseleave', () => drawing = false);
-
-    // Touch events
-    drawCanvas.addEventListener('touchstart', e => {
-        if (e.target === drawCanvas) {
-             e.preventDefault();
-        }
-        startDrawing(getTouchPos(drawCanvas, e));
-    });
-    drawCanvas.addEventListener('touchmove', e => {
-        if (e.target === drawCanvas) {
-            e.preventDefault();
-       }
-        draw(getTouchPos(drawCanvas, e));
-    });
-    drawCanvas.addEventListener('touchend', () => drawing = false);
-
-
-    document.getElementById('colorPicker').addEventListener('change', e => {
-      color = e.target.value;
-    });
-
-     // Initialize color picker value and canvas size
-    document.getElementById('colorPicker').value = color;
-    // Ensure layout is ready before initial resize and load
-    window.onload = () => {
-        resizeCanvas();
-        loadEntries();
-    }
-  </script>
+// sliders — keep trial ≥ pause+buffer
+$('n').oninput=e=>{ N=+e.target.value; $('nVal').textContent=N; };
+$('trials').oninput=e=>{ MAX=+e.target.value; $('tVal').textContent=MAX; $('max').textContent=MAX; };
+$('dur').oninput=e=>{
+  const val=+e.target.value; const minNeeded=REL_PAUSE+500;
+  DUR=Math.max(val,minNeeded); $('dVal').textContent=DUR; if(DUR!==val) $('dur').value=DUR;
+};
+$('pauseTime').oninput=e=>{
+  REL_PAUSE=+e.target.value; $('pVal').textContent=REL_PAUSE;
+  const minNeeded=REL_PAUSE+500;
+  if(DUR<minNeeded){ DUR=minNeeded; $('dur').value=DUR; $('dVal').textContent=DUR; }
+};
+$('rate').oninput=e=>{ RATE=+e.target.value; $('rVal').textContent=RATE+'%'; };
+</script>
 </body>
 </html>
