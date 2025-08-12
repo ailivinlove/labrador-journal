@@ -52,7 +52,7 @@ select{ min-height:38px }
         <select id="regionSelect"></select>
         <label>Voice</label>
         <select id="voice"></select>
-        <div class="mut" id="voiceHint" style="margin-top:6px;">Only <b>approved female</b> voices, correctly labeled and grouped by country of origin.</div>
+        <div class="mut" id="voiceHint" style="margin-top:6px;">Menus fill instantly; they’ll auto-update if the system exposes more voices.</div>
         <label style="margin-top:10px">Rate: <span id="rateVal">0.95</span></label>
         <input id="vRate" type="range" min="0.7" max="1.6" step="0.01" value="0.95">
         <label>Pitch: <span id="pitchVal">1.28</span></label>
@@ -103,79 +103,75 @@ const DIRS = {
 const HORIZ = Object.keys(DIRS);
 const LEVELS = [1,2,3];
 
-/* ===================== APPROVED FEMALE VOICES (strict cross-exam) ===================== */
-let VOICE=null; let running=false; let paused=false;
+/* ===================== female-only voice loader (strict, labeled, region-correct) ===================== */
+let VOICE=null; let running=false; let paused=false; // running/paused also used by gameplay
+let pendingVoiceRefresh=false; // don't hot-swap during speech
 let pendingVoiceKey=null;      // apply user change at premise boundary
-let pendingVoiceRefresh=false; // refresh list only when idle
-const LAST_KEY='rnback_last_voice_v3';
+const LAST_KEY='rnback_last_voice_v2';
 
-// Country names for region codes inferred from language tags
 const REGION_NAMES={ AE:'United Arab Emirates', AU:'Australia', GB:'United Kingdom', UK:'United Kingdom',
   US:'United States', CA:'Canada', NZ:'New Zealand', IE:'Ireland', IN:'India', ZA:'South Africa',
-  PH:'Philippines', SG:'Singapore', HK:'Hong Kong' };
+  PH:'Philippines', SG:'Singapore', HK:'Hong Kong', NG:'Nigeria'
+};
 const regionCode=lang=>(String(lang).match(/^[a-z]{2,3}[-_]?([A-Z]{2})/)||[])[1]||'';
 const regionName=lang=> (regionCode(lang)==='AE' ? 'United Arab Emirates'
                          : REGION_NAMES[regionCode(lang)] || (/^en\b/i.test(lang)?'Global English':'Other Region'));
+
+// Robust name/gender heuristics (Web Speech API does not expose gender)
+const FEMALE_TOKENS=/\b(zira|samantha|karen|moira|tessa|serena|veena|victoria|joanna|jenny|aria|jessa|kimberly|kendra|ivy|nicole|salli|olivia|ella|ava|amy|emma|mia|sophia|isabella|natasha|catherine|allison|chloe|grace|zoe|sarah|sofia|camila|paulina|luciana|monica|anna|tatyana|zhiyu|hazel|helen|riva|luna|maya|noor|nour|layla|leila|hala|mariam|maryam|salma|dana|rania|yasmin|yasmine|amal|reem|farah|fatima|fatma|huda|nada|noura|nura|susan|sonia|sonya|cortana|hannah|lila|lily|kate|grace)\b/i;
+const MALE_NEG=/\b(male|boy|man|alex(?!a)|daniel|david|george|michael|mark|tom|fred|brian|kevin|liam|adam|andy|ben|bruce|charles|chris\b|eric|frank|jack|john|luke|matt|mike|nathan|paul|peter|ryan|steve|tim|james|william|robert|andrew|henry|richard|pablo|ricardo|mateo|rahul|ravi|neil|noah|sam(?!antha))\b/i;
 
 function voicesNow(){ try{ return speechSynthesis.getVoices()||[]; }catch(_){ return []; } }
 function vKey(v){ return v.voiceURI||(v.name+'|'+v.lang); }
 
 function vendorOf(v){ const n=v.name||''; const u=v.voiceURI||''; if(/^Microsoft\b/i.test(n)) return 'Microsoft'; if(/^Google\b/i.test(n)) return 'Google'; if(/com\.apple\./i.test(u)) return 'Apple'; return 'System'; }
+
 function canonicalName(v){
   const vendor=vendorOf(v);
   let name=v.name||'';
   if(vendor==='Microsoft'){
+    // e.g., "Microsoft Zira Desktop - English (United States)"
     name=name.replace(/^Microsoft\s+/i,'').replace(/\s+(Desktop|Online)(?:\s*\(Natural\))?/i,'')
              .replace(/\s*-\s*English.*$/i,'').trim();
   }
-  if(vendor==='Google') name=name.trim();
-  if(vendor==='Apple') name=name.trim();
+  if(vendor==='Google'){
+    // Keep Google’s name (e.g., "Google UK English Female")
+    name=name.trim();
+  }
+  if(vendor==='Apple'){
+    // Apple names are already pretty clean (Karen, Samantha, Tessa, ...)
+    name=name.trim();
+  }
+  // Fallback to voiceURI tail if empty
   if(!name){ const m=(v.voiceURI||'').match(/([\w-]+)$/); if(m) name=m[1]; }
   return name;
 }
 
-// Strict allowlist: if it is not explicitly approved, it is excluded
-const APPROVED = {
-  Apple: {
-    'en-AU': ['Karen'],
-    'en-GB': ['Serena'],
-    'en-US': ['Samantha','Victoria'],
-    'en-IE': ['Moira'],
-    'en-IN': ['Veena'],
-    'en-ZA': ['Tessa']
-  },
-  Microsoft: {
-    'en-US': ['Zira','Aria','Jenny','Jessa'] // conservative set
-    // Add more if needed once verified on your machine
-  },
-  Google: {
-    'en-GB': ['Google UK English Female']
-  }
-};
-
-function approvedFemaleStrict(v){
-  const vendor=vendorOf(v);
-  const lang=(v.lang||'').replace('_','-');
-  if(!/^en-/i.test(lang)) return false; // limit to English voices as per game language
-  const name=canonicalName(v);
-  const allowByVendor=APPROVED[vendor]; if(!allowByVendor) return false;
-  const regionKey=lang.slice(0,5); // e.g., en-AU
-  const allowNames=allowByVendor[regionKey]; if(!allowNames) return false;
-  // case-insensitive match against approved names
-  return allowNames.some(n=>n.toLowerCase()===name.toLowerCase());
+function isExplicitFemale(v){
+  const n=(v.name+' '+v.voiceURI).toLowerCase();
+  if(/\bfemale\b/.test(n)) return true;
+  if(FEMALE_TOKENS.test(n)) return true;
+  if(MALE_NEG.test(n)) return false;
+  // Apple known female set by name + region
+  const knownAppleFemale=new Set(['samantha','karen','tessa','moira','serena','veena','victoria']);
+  if(/com\.apple\./i.test(v.voiceURI||'') && knownAppleFemale.has((v.name||'').toLowerCase())) return true;
+  return false;
 }
 
 function properLabel(v){
-  const name=canonicalName(v);
   const region=regionName(v.lang);
   const code=regionCode(v.lang);
   const vendor=vendorOf(v);
-  return `${name} — ${region}${code?` (${code})`:''} [${vendor}]`;
+  const name=canonicalName(v);
+  return `${name} — ${region}${code?` (${code})`:''} (${vendor})`;
 }
 
 function chooseBestVoice(list){
-  try{ const last=localStorage.getItem(LAST_KEY); if(last){ const found=list.find(v=>vKey(v)===last); if(found) return found; } }catch(_){ }
-  // Prefer AU → GB → US
+  try{
+    const last=localStorage.getItem(LAST_KEY);
+    if(last){ const found=list.find(v=>vKey(v)===last); if(found) return found; }
+  }catch(_){}}
+  // Prefer AU then GB then US female voices
   const order=[/en[-_]?AU/i,/en[-_]?GB/i,/en[-_]?US/i];
   for(const re of order){ const f=list.find(v=>re.test(v.lang)); if(f) return f; }
   return list[0]||null;
@@ -186,47 +182,52 @@ function populateMenusStrict(){
   voiceSel.innerHTML=''; regionSel.innerHTML='';
 
   const raw=voicesNow();
-  const approved=raw.filter(approvedFemaleStrict);
+  const females=raw.filter(isExplicitFemale);
+  const pool = females.length ? females
+    : raw.filter(v => /^en[-_]/i.test(v.lang||'') && !MALE_NEG.test((v.name+' '+v.voiceURI)));
 
-  // Build regions from approved only
+  // Build regions only where female voices exist
   const groups=new Map();
-  for(const v of approved){ const r=regionName(v.lang); if(!groups.has(r)) groups.set(r,[]); groups.get(r).push(v); }
+  for(const v of pool){ const r=regionName(v.lang); if(!groups.has(r)) groups.set(r,[]); groups.get(r).push(v); }
 
-  const regionsOrder=['Australia','United Kingdom','United States','Ireland','India','South Africa','Canada'];
+  const regionsOrder=['Australia','United Kingdom','United States','Ireland','India','South Africa','United Arab Emirates','Canada','New Zealand','Singapore','Philippines','Hong Kong','Global English','Other Region'];
   const regions=regionsOrder.filter(r=>groups.has(r));
 
   if(regions.length===0){
-    const o=document.createElement('option'); o.value=''; o.textContent='— No approved female voices found —'; voiceSel.appendChild(o);
-    voiceSel.disabled=true; regionSel.disabled=true; $('voiceStatus').textContent='No approved voices'; $('start').disabled=true; return;
+    const o=document.createElement('option'); o.value=''; o.textContent='— No female voices found on this system —'; voiceSel.appendChild(o);
+    voiceSel.disabled=true; regionSel.disabled=true; $('voiceStatus').textContent='No female voices';
+    $('start').disabled=true; return;
   }
 
   regions.forEach(r=>{ const o=document.createElement('option'); o.value=r; o.textContent=r; regionSel.appendChild(o); });
   regionSel.value = regions.includes('Australia') ? 'Australia' : regions[0];
 
-  function fill(region){
+  function fillVoicesFor(region){
     voiceSel.innerHTML='';
-    const pack=(groups.get(region)||[]).slice().sort((a,b)=>canonicalName(a).localeCompare(canonicalName(b)));
+    const pack=groups.get(region)||[];
     pack.forEach(v=>{ const o=document.createElement('option'); o.value=vKey(v); o.textContent=properLabel(v); o.title=`${v.name} — ${regionName(v.lang)} — ${v.lang}`; voiceSel.appendChild(o); });
     voiceSel.disabled = pack.length===0;
     const best=chooseBestVoice(pack);
     if(best){ VOICE=best; voiceSel.value=vKey(best); try{localStorage.setItem(LAST_KEY,vKey(best));}catch(_){}}
   }
 
-  fill(regionSel.value);
-  regionSel.onchange=()=>fill(regionSel.value);
+  fillVoicesFor(regionSel.value);
+
+  regionSel.onchange=()=>fillVoicesFor(regionSel.value);
   voiceSel.onchange=()=>{ const key=voiceSel.value; const found=voicesNow().find(v=>vKey(v)===key); if(found){ if(running) pendingVoiceKey=key; else { VOICE=found; try{localStorage.setItem(LAST_KEY,vKey(found));}catch(_){}} } };
 
-  if('speechSynthesis' in window){ speechSynthesis.onvoiceschanged = ()=>{ if(running){ pendingVoiceRefresh=true; } else { populateMenusStrict(); } };
+  if('speechSynthesis' in window){
+    speechSynthesis.onvoiceschanged = ()=>{ if(running){ pendingVoiceRefresh=true; } else { populateMenusStrict(); } };
   }
 
-  $('voiceStatus').textContent='Ready'; $('start').disabled=false;
+  $('voiceStatus').textContent='Ready';
 }
 
-function applyVoiceDefaults(){ $('vRate').value=0.95; $('rateVal').textContent='0.95'; $('vPitch').value=1.28; $('pitchVal').textContent='1.28'; $('vVol').value=1.00; $('vVolVal').textContent='1.00'; }
+function applyVoiceDefaults(){ $('vRate').value=0.95; $('rateVal').textContent='0.95'; $('vPitch').value=1.28; $('pitchVal').textContent='1.28'; }
 
 async function warmupTTS(){ try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; if(VOICE) u.voice=VOICE; speechSynthesis.speak(u); await sleep(60);}catch(_){}}
 
-/* Speaking: lock a single snapshot voice per premise; no mid-sentence switches */
+/* Speaking: lock a single snapshot voice per premise to prevent mid-utterance switching */
 async function speak(text, voiceSnap){
   if(!('speechSynthesis' in window)) return;
   const u=new SpeechSynthesisUtterance(text);
@@ -298,7 +299,7 @@ function isActualMatch(i){ return i>=N && sentencesCompatible(history[i-N], hist
 function buildPremiseVisual(raw){ const parts=raw.split(/\s+and\s+/i).map(p=>p.trim()); const el=$('premiseText'); el.innerHTML=''; parts.forEach((part,i)=>{ const sp=document.createElement('span'); sp.className='rel'; sp.textContent=part; el.appendChild(sp); if(i<parts.length-1){ const sep=document.createElement('span'); sep.className='sep'; sep.textContent=' and '; el.appendChild(sep); } }); return parts; }
 function setActivePart(i){ [...$('premiseText').querySelectorAll('.rel')].forEach((n,idx)=>n.classList.toggle('active', idx===i)); }
 
-// Speak all parts with the SAME voice snapshot; trailing pause to prevent cut-ins
+// Speak all parts using a single voice snapshot + trailing pause
 async function speakPremise(){
   if(!spokenParts) return;
   const voiceSnap = VOICE; // lock for the whole premise
@@ -312,10 +313,7 @@ async function speakPremise(){
   if(running && !paused){ await new Promise(res=>{ waitTimer=setTimeout(()=>{waitTimer=null; res(); }, PAUSE_SEC*1000); }); await sleep(30); }
 }
 
-function maybeApplyPendingVoice(){
-  if(pendingVoiceKey){ const found=voicesNow().find(v=>vKey(v)===pendingVoiceKey); if(found){ VOICE=found; try{localStorage.setItem(LAST_KEY,vKey(found));}catch(_){}} pendingVoiceKey=null; }
-  if(pendingVoiceRefresh){ pendingVoiceRefresh=false; populateMenusStrict(); }
-}
+function maybeApplyPendingVoice(){ if(pendingVoiceKey){ const found=voicesNow().find(v=>vKey(v)===pendingVoiceKey); if(found){ VOICE=found; try{localStorage.setItem(LAST_KEY,vKey(found));}catch(_){}} pendingVoiceKey=null; } if(pendingVoiceRefresh){ pendingVoiceRefresh=false; populateMenusStrict(); } }
 
 function nextPremiseString(){ const want=planned[idx] && idx>=N; if(want) return buildCompatible(history[idx-N]); let s, tries=0; do{ s=randomPremise(); tries++; } while(idx>=N && sentencesCompatible(history[idx-N], s) && tries<300); if(idx>=N && sentencesCompatible(history[idx-N], s)){ const P=parsePremise(s); if(P.edges.length){ const e=P.edges[0]; if(e.rel.z){ e.rel.z*=-1; } else { e.rel.x*=-1; e.rel.y*=-1; } s=P.edges.map(ed=>clauseString(ed.u, ed.rel, ed.v)).join(' and '); } } return s; }
 
@@ -331,7 +329,19 @@ function skip(){ if(!running) return; clearTimeout(waitTimer); try{speechSynthes
 function updateUI(){ $('idx').textContent=idx; $('max').textContent=MAX; $('ptype').textContent = planned[idx] && idx>=N ? 'planned MATCH' : 'planned NON-match'; $('isMatch').textContent = idx>=N ? String(isActualMatch(idx)).toUpperCase() : '—'; $('corr').textContent=correct; $('err').textContent=errors; $('nVal').textContent=N; $('tVal').textContent=MAX; $('pVal').textContent=PAUSE_SEC.toFixed(1)+' s'; $('rVal').textContent=RATE+'%'; }
 
 /* ===================== bindings ===================== */
-$('start').onclick = async ()=>{ if(!VOICE){ populateMenusStrict(); const pool=voicesNow().filter(approvedFemaleStrict); if(pool.length){ const best=chooseBestVoice(pool); if(best){ VOICE=best; try{localStorage.setItem(LAST_KEY,vKey(best));}catch(_){}} } } await warmupTTS(); await speak('Ready.', VOICE); start(); };
+$('start').onclick = async ()=>{
+  if(!VOICE){
+    populateMenusStrict();
+    const rawPool=voicesNow();
+    let pool=rawPool.filter(isExplicitFemale);
+    if(!pool.length){ pool = rawPool.filter(v => /^en[-_]/i.test(v.lang||'') && !MALE_NEG.test((v.name+' '+v.voiceURI))); }
+    const best=chooseBestVoice(pool);
+    if(best){ VOICE=best; try{localStorage.setItem(LAST_KEY,vKey(best));}catch(_){}}
+  }
+  await warmupTTS();
+  await speak('Ready.', VOICE);
+  start();
+};
 $('pause').onclick=togglePause; $('reset').onclick=reset; $('hit').onclick=registerHit; $('skip').onclick=skip; window.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='m') registerHit(); });
 
 // sliders
