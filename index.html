@@ -52,7 +52,7 @@ select{ min-height:38px }
         <select id="regionSelect"></select>
         <label>Voice</label>
         <select id="voice"></select>
-        <div class="mut" id="voiceHint" style="margin-top:6px;">Menus fill instantly and won’t switch voices during a block.</div>
+        <div class="mut" id="voiceHint" style="margin-top:6px;">Only <b>approved female</b> voices, correctly labeled and grouped by country of origin.</div>
         <label style="margin-top:10px">Rate: <span id="rateVal">0.95</span></label>
         <input id="vRate" type="range" min="0.7" max="1.6" step="0.01" value="0.95">
         <label>Pitch: <span id="pitchVal">1.28</span></label>
@@ -103,16 +103,16 @@ const DIRS = {
 const HORIZ = Object.keys(DIRS);
 const LEVELS = [1,2,3];
 
-/* ===================== voice management (stabilized) ===================== */
-let VOICE=null;
-let pendingVoiceKey=null;       // user-chosen change during play; applied at boundary
-let voicesPrimed=false;
-const LAST_KEY='rnback_last_voice_v2';
+/* ===================== APPROVED FEMALE VOICES (strict cross-exam) ===================== */
+let VOICE=null; let running=false; let paused=false;
+let pendingVoiceKey=null;      // apply user change at premise boundary
+let pendingVoiceRefresh=false; // refresh list only when idle
+const LAST_KEY='rnback_last_voice_v3';
 
+// Country names for region codes inferred from language tags
 const REGION_NAMES={ AE:'United Arab Emirates', AU:'Australia', GB:'United Kingdom', UK:'United Kingdom',
   US:'United States', CA:'Canada', NZ:'New Zealand', IE:'Ireland', IN:'India', ZA:'South Africa',
-  PH:'Philippines', SG:'Singapore', HK:'Hong Kong', NG:'Nigeria'
-};
+  PH:'Philippines', SG:'Singapore', HK:'Hong Kong' };
 const regionCode=lang=>(String(lang).match(/^[a-z]{2,3}[-_]?([A-Z]{2})/)||[])[1]||'';
 const regionName=lang=> (regionCode(lang)==='AE' ? 'United Arab Emirates'
                          : REGION_NAMES[regionCode(lang)] || (/^en\b/i.test(lang)?'Global English':'Other Region'));
@@ -120,126 +120,119 @@ const regionName=lang=> (regionCode(lang)==='AE' ? 'United Arab Emirates'
 function voicesNow(){ try{ return speechSynthesis.getVoices()||[]; }catch(_){ return []; } }
 function vKey(v){ return v.voiceURI||(v.name+'|'+v.lang); }
 
-function labelForVoice(v){
+function vendorOf(v){ const n=v.name||''; const u=v.voiceURI||''; if(/^Microsoft\b/i.test(n)) return 'Microsoft'; if(/^Google\b/i.test(n)) return 'Google'; if(/com\.apple\./i.test(u)) return 'Apple'; return 'System'; }
+function canonicalName(v){
+  const vendor=vendorOf(v);
+  let name=v.name||'';
+  if(vendor==='Microsoft'){
+    name=name.replace(/^Microsoft\s+/i,'').replace(/\s+(Desktop|Online)(?:\s*\(Natural\))?/i,'')
+             .replace(/\s*-\s*English.*$/i,'').trim();
+  }
+  if(vendor==='Google') name=name.trim();
+  if(vendor==='Apple') name=name.trim();
+  if(!name){ const m=(v.voiceURI||'').match(/([\w-]+)$/); if(m) name=m[1]; }
+  return name;
+}
+
+// Strict allowlist: if it is not explicitly approved, it is excluded
+const APPROVED = {
+  Apple: {
+    'en-AU': ['Karen'],
+    'en-GB': ['Serena'],
+    'en-US': ['Samantha','Victoria'],
+    'en-IE': ['Moira'],
+    'en-IN': ['Veena'],
+    'en-ZA': ['Tessa']
+  },
+  Microsoft: {
+    'en-US': ['Zira','Aria','Jenny','Jessa'] // conservative set
+    // Add more if needed once verified on your machine
+  },
+  Google: {
+    'en-GB': ['Google UK English Female']
+  }
+};
+
+function approvedFemaleStrict(v){
+  const vendor=vendorOf(v);
+  const lang=(v.lang||'').replace('_','-');
+  if(!/^en-/i.test(lang)) return false; // limit to English voices as per game language
+  const name=canonicalName(v);
+  const allowByVendor=APPROVED[vendor]; if(!allowByVendor) return false;
+  const regionKey=lang.slice(0,5); // e.g., en-AU
+  const allowNames=allowByVendor[regionKey]; if(!allowNames) return false;
+  // case-insensitive match against approved names
+  return allowNames.some(n=>n.toLowerCase()===name.toLowerCase());
+}
+
+function properLabel(v){
+  const name=canonicalName(v);
   const region=regionName(v.lang);
-  // lightweight hashed friendly label stable across reloads
-  const pool={
-    'United Arab Emirates':['Layla','Noor','Hala','Mariam','Salma','Dana','Rania','Yasmin','Amal','Leila'],
-    'Australia':['Zoe','Isla','Mia','Sophie','Olivia','Ava','Ella','Grace','Ruby','Lily','Chloe'],
-    'United Kingdom':['Sophie','Amelia','Olivia','Grace','Ava','Emily','Isla','Lucy','Chloe','Mia'],
-    'United States':['Amy','Emma','Ava','Mia','Sophia','Isabella','Olivia','Ella','Zoe','Grace'],
-    'Global English':['Amy','Ella','Zoe','Mia','Ava','Sophie','Lily','Ruby','Grace','Chloe'],
-    'Other Region':['Ella','Zoe','Mia','Ava','Sophie','Lily','Ruby','Grace','Chloe']
-  }[region] || ['Voice'];
-  let h=0, key=vKey(v); for(let i=0;i<key.length;i++) h=(h*31+key.charCodeAt(i))>>>0;
-  const label=pool[h%pool.length];
-  return `${label} (${region})`;
+  const code=regionCode(v.lang);
+  const vendor=vendorOf(v);
+  return `${name} — ${region}${code?` (${code})`:''} [${vendor}]`;
 }
 
 function chooseBestVoice(list){
-  // prefer AU English; otherwise first available
-  const last=localStorage.getItem(LAST_KEY);
-  if(last){ const found=list.find(v=>vKey(v)===last); if(found) return found; }
-  const au=list.find(v=>/en[-_]?AU/i.test(v.lang));
-  return au || list[0] || null;
+  try{ const last=localStorage.getItem(LAST_KEY); if(last){ const found=list.find(v=>vKey(v)===last); if(found) return found; } }catch(_){ }
+  // Prefer AU → GB → US
+  const order=[/en[-_]?AU/i,/en[-_]?GB/i,/en[-_]?US/i];
+  for(const re of order){ const f=list.find(v=>re.test(v.lang)); if(f) return f; }
+  return list[0]||null;
 }
 
-function setVoiceByKey(key){
-  const found=voicesNow().find(v=>vKey(v)===key);
-  if(!found) return;
-  if(running){ pendingVoiceKey=key; }  // apply at boundary
-  else {
-    VOICE=found;
-    try{ localStorage.setItem(LAST_KEY,vKey(found)); }catch(_){}
+function populateMenusStrict(){
+  const voiceSel=$('voice'); const regionSel=$('regionSelect');
+  voiceSel.innerHTML=''; regionSel.innerHTML='';
+
+  const raw=voicesNow();
+  const approved=raw.filter(approvedFemaleStrict);
+
+  // Build regions from approved only
+  const groups=new Map();
+  for(const v of approved){ const r=regionName(v.lang); if(!groups.has(r)) groups.set(r,[]); groups.get(r).push(v); }
+
+  const regionsOrder=['Australia','United Kingdom','United States','Ireland','India','South Africa','Canada'];
+  const regions=regionsOrder.filter(r=>groups.has(r));
+
+  if(regions.length===0){
+    const o=document.createElement('option'); o.value=''; o.textContent='— No approved female voices found —'; voiceSel.appendChild(o);
+    voiceSel.disabled=true; regionSel.disabled=true; $('voiceStatus').textContent='No approved voices'; $('start').disabled=true; return;
   }
-}
 
-function populateMenusFast(){
-  const regionsOrder=['Australia','United Kingdom','United States','United Arab Emirates','Canada','Ireland','New Zealand','South Africa','Global English','Other Region'];
-  const regionSel=$('regionSelect'); const voiceSel=$('voice');
-  regionSel.innerHTML=''; voiceSel.innerHTML='';
+  regions.forEach(r=>{ const o=document.createElement('option'); o.value=r; o.textContent=r; regionSel.appendChild(o); });
+  regionSel.value = regions.includes('Australia') ? 'Australia' : regions[0];
 
-  regionsOrder.forEach(r=>{ const o=document.createElement('option'); o.value=r; o.textContent=r; regionSel.appendChild(o); });
-  regionSel.value='Australia';
-
-  const raw=voicesNow(); const use=raw.slice();
-  const inRegion = (r)=>use.filter(v=>regionName(v.lang)===r);
-
-  function fillVoicesFor(region){
-    const prevSel=voiceSel.value;
+  function fill(region){
     voiceSel.innerHTML='';
-    const pack=inRegion(region);
-    (pack.length?pack:use).forEach(v=>{
-      const o=document.createElement('option');
-      o.value=vKey(v);
-      o.textContent=labelForVoice(v);
-      o.title=`${v.name} — ${regionName(v.lang)} — ${v.lang}`;
-      voiceSel.appendChild(o);
-    });
-    // preserve current voice if present, otherwise pick best once
-    if(VOICE){
-      const k=vKey(VOICE);
-      if([...voiceSel.options].some(o=>o.value===k)) voiceSel.value=k;
-      else {
-        const best=chooseBestVoice(use); if(best){ VOICE=best; voiceSel.value=vKey(best); }
-      }
-    } else {
-      const best=chooseBestVoice(use); if(best){ VOICE=best; voiceSel.value=vKey(best); }
-    }
+    const pack=(groups.get(region)||[]).slice().sort((a,b)=>canonicalName(a).localeCompare(canonicalName(b)));
+    pack.forEach(v=>{ const o=document.createElement('option'); o.value=vKey(v); o.textContent=properLabel(v); o.title=`${v.name} — ${regionName(v.lang)} — ${v.lang}`; voiceSel.appendChild(o); });
+    voiceSel.disabled = pack.length===0;
+    const best=chooseBestVoice(pack);
+    if(best){ VOICE=best; voiceSel.value=vKey(best); try{localStorage.setItem(LAST_KEY,vKey(best));}catch(_){}}
   }
 
-  fillVoicesFor(regionSel.value);
-  regionSel.onchange=()=>fillVoicesFor(regionSel.value);
-  voiceSel.onchange=()=>setVoiceByKey(voiceSel.value);
+  fill(regionSel.value);
+  regionSel.onchange=()=>fill(regionSel.value);
+  voiceSel.onchange=()=>{ const key=voiceSel.value; const found=voicesNow().find(v=>vKey(v)===key); if(found){ if(running) pendingVoiceKey=key; else { VOICE=found; try{localStorage.setItem(LAST_KEY,vKey(found));}catch(_){}} } };
 
-  if('speechSynthesis' in window){
-    // Do NOT reflow voice list while running; do a light refresh only when idle
-    speechSynthesis.onvoiceschanged = ()=>{
-      if(!running){ populateMenusFast(); }
-    };
+  if('speechSynthesis' in window){ speechSynthesis.onvoiceschanged = ()=>{ if(running){ pendingVoiceRefresh=true; } else { populateMenusStrict(); } };
   }
+
+  $('voiceStatus').textContent='Ready'; $('start').disabled=false;
 }
 
-function applyVoiceDefaults(){
-  $('vRate').value=0.95; $('rateVal').textContent='0.95';
-  $('vPitch').value=1.28; $('pitchVal').textContent='1.28';
-  $('vVol').value=1.00; $('vVolVal').textContent='1.00';
-}
+function applyVoiceDefaults(){ $('vRate').value=0.95; $('rateVal').textContent='0.95'; $('vPitch').value=1.28; $('pitchVal').textContent='1.28'; $('vVol').value=1.00; $('vVolVal').textContent='1.00'; }
 
-async function warmupTTS(){
-  if(voicesPrimed || !('speechSynthesis' in window)) return;
-  voicesPrimed=true;
-  try{
-    const u=new SpeechSynthesisUtterance(' '); // inaudible warmup
-    u.volume=0; u.rate=1; u.pitch=1;
-    if(VOICE) u.voice=VOICE;
-    speechSynthesis.speak(u);
-    await sleep(80);
-  }catch(_){}
-}
+async function warmupTTS(){ try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; if(VOICE) u.voice=VOICE; speechSynthesis.speak(u); await sleep(60);}catch(_){}}
 
-/* speaking with stable per-call voice snapshot + dynamic guard */
+/* Speaking: lock a single snapshot voice per premise; no mid-sentence switches */
 async function speak(text, voiceSnap){
-  if(!('speechSynthesis' in window)){ return; }
-  const v = voiceSnap || VOICE;
+  if(!('speechSynthesis' in window)) return;
   const u=new SpeechSynthesisUtterance(text);
-  if(v) u.voice=v;
-  u.lang=(v&&v.lang) ? v.lang : 'en-AU';
-  u.rate=+$('vRate').value;
-  u.pitch=+$('vPitch').value;
-  u.volume=+$('vVol').value;
-
-  return new Promise(res=>{
-    let settled=false; const done=()=>{ if(!settled){ settled=true; res(); } };
-    u.onend=done; u.onerror=done;
-    try{
-      speechSynthesis.speak(u);
-      // dynamic guard ~ 60ms per char / rate + base; capped at 12s
-      const ch=Math.max(1, text.length), rate=Math.max(0.5,u.rate||1);
-      const guard=Math.min(12000, 250 + Math.ceil(60*ch/rate));
-      setTimeout(done, guard);
-    }catch(_){ done(); }
-  });
+  const v=voiceSnap||VOICE; if(v) u.voice=v; u.lang=(v&&v.lang)||'en-AU';
+  u.rate=+$('vRate').value; u.pitch=+$('vPitch').value; u.volume=+$('vVol').value;
+  return new Promise(res=>{ let done=false; const finish=()=>{ if(!done){ done=true; res(); }}; u.onend=finish; u.onerror=finish; try{ speechSynthesis.speak(u); const guard=Math.min(12000, 250+Math.ceil(60*Math.max(1,text.length)/Math.max(0.5,u.rate||1))); setTimeout(finish,guard);}catch(_){ finish(); } });
 }
 
 /* ===================== strict relational logic (reversible) ===================== */
@@ -271,92 +264,24 @@ function parsePremise(sentence){
   return {nodes:[...nodes], edges};
 }
 function invertRel(r){ return {x:-r.x, y:-r.y, z:-r.z}; }
-function canonEdge(u,v,rel){
-  if(u<=v){ return {a:u, b:v, rel:`${rel.x},${rel.y},${rel.z}`}; }
-  const ri=invertRel(rel);
-  return {a:v, b:u, rel:`${ri.x},${ri.y},${ri.z}`};
-}
+function canonEdge(u,v,rel){ if(u<=v){ return {a:u, b:v, rel:`${rel.x},${rel.y},${rel.z}`}; } const ri=invertRel(rel); return {a:v, b:u, rel:`${ri.x},${ri.y},${ri.z}`}; }
 function multisetKey(e){ return `${e.a}|${e.b}|${e.rel}`; }
-function edgesToMultiset(edges){
-  const map=new Map();
-  for(const e of edges){ const ce=canonEdge(e.u,e.v,e.rel); const k=multisetKey(ce); map.set(k,(map.get(k)||0)+1); }
-  return map;
-}
-function equalMultisets(A,B){
-  if(A.size!==B.size) return false;
-  for(const [k,v] of A){ if(B.get(k)!==v) return false; }
-  return true;
-}
-function permutations(arr){
-  const res=[], used=Array(arr.length).fill(false), path=[];
-  (function dfs(){
-    if(path.length===arr.length){ res.push(path.slice()); return; }
-    for(let i=0;i<arr.length;i++){ if(used[i])continue; used[i]=true; path.push(arr[i]); dfs(); path.pop(); used[i]=false; }
-  })(); return res;
-}
-function sentencesCompatible(a,b){
-  const A=parsePremise(a), B=parsePremise(b);
-  if(A.edges.length!==B.edges.length) return false;
-  if(A.nodes.length!==B.nodes.length) return false;
-  const nodesA=A.nodes.slice().sort(), nodesB=B.nodes.slice().sort();
-  const Ams=edgesToMultiset(A.edges);
-  for(const perm of permutations(nodesA)){
-    const map=new Map(); for(let i=0;i<nodesB.length;i++) map.set(nodesB[i], perm[i]);
-    const mapped=B.edges.map(e=>({u:map.get(e.u), v:map.get(e.v), rel:e.rel}));
-    const Bms=edgesToMultiset(mapped);
-    if(equalMultisets(Ams,Bms)) return true;
-  }
-  return false;
-}
+function edgesToMultiset(edges){ const map=new Map(); for(const e of edges){ const ce=canonEdge(e.u,e.v,e.rel); const k=multisetKey(ce); map.set(k,(map.get(k)||0)+1); } return map; }
+function equalMultisets(A,B){ if(A.size!==B.size) return false; for(const [k,v] of A){ if(B.get(k)!==v) return false; } return true; }
+function permutations(arr){ const res=[], used=Array(arr.length).fill(false), path=[]; (function dfs(){ if(path.length===arr.length){ res.push(path.slice()); return; } for(let i=0;i<arr.length;i++){ if(used[i])continue; used[i]=true; path.push(arr[i]); dfs(); path.pop(); used[i]=false; } })(); return res; }
+function sentencesCompatible(a,b){ const A=parsePremise(a), B=parsePremise(b); if(A.edges.length!==B.edges.length) return false; if(A.nodes.length!==B.nodes.length) return false; const nodesA=A.nodes.slice().sort(), nodesB=B.nodes.slice().sort(); const Ams=edgesToMultiset(A.edges); for(const perm of permutations(nodesA)){ const map=new Map(); for(let i=0;i<nodesB.length;i++) map.set(nodesB[i], perm[i]); const mapped=B.edges.map(e=>({u:map.get(e.u), v:map.get(e.v), rel:e.rel})); const Bms=edgesToMultiset(mapped); if(equalMultisets(Ams,Bms)) return true; } return false; }
 
 /* ===================== builders ===================== */
-function clauseString(from, rel, to){
-  if(rel.z){
-    const n=Math.abs(rel.z), word=n===1?'one level':n===2?'two levels':'three levels';
-    return `${from} is ${word} ${rel.z>0?'above':'below'} ${to}`;
-  } else {
-    const d = Object.entries(DIRS).find(([k,v])=>v.x===rel.x && v.y===rel.y)[0];
-    return `${from} is ${d} of ${to}`;
-  }
-}
-function randomPremise(){
-  const [A,B,C]=uniqueTokens(3);
-  const pick=()=> Math.random()<0.6 ? {k:'h',d:HORIZ[Math.floor(Math.random()*HORIZ.length)]}
-                                    : {k:'v',n:LEVELS[Math.floor(Math.random()*LEVELS.length)],up:Math.random()<0.5};
-  const c=(X,r,Y)=> r.k==='h' ? `${X} is ${r.d} of ${Y}` : `${X} is ${r.n} ${r.n===1?'level':'levels'} ${r.up?'above':'below'} ${Y}`;
-  const r1=pick(), r2=pick();
-  return `${c(A,r1,B)} and ${c(B,r2,C)}`;
-}
-function buildCompatible(sentence){
-  const P=parsePremise(sentence);
-  const uniq=[...new Set(P.edges.flatMap(e=>[e.u,e.v]))].length;
-  const labels=uniqueTokens(uniq);
-  const map=new Map(); let i=0;
-  const parts=P.edges.map(({u,v,rel})=>{
-    if(!map.has(u)) map.set(u,labels[i++]);
-    if(!map.has(v)) map.set(v,labels[i++]);
-    return clauseString(map.get(u),rel,map.get(v));
-  });
-  for(let j=parts.length-1;j>0;j--){ const k=Math.floor(Math.random()*(j+1)); [parts[j],parts[k]]=[parts[k],parts[j]]; }
-  return parts.join(' and ');
-}
+function clauseString(from, rel, to){ if(rel.z){ const n=Math.abs(rel.z), word=n===1?'one level':n===2?'two levels':'three levels'; return `${from} is ${word} ${rel.z>0?'above':'below'} ${to}`; } else { const d = Object.entries(DIRS).find(([k,v])=>v.x===rel.x && v.y===rel.y)[0]; return `${from} is ${d} of ${to}`; } }
+function randomPremise(){ const [A,B,C]=uniqueTokens(3); const pick=()=> Math.random()<0.6 ? {k:'h',d:HORIZ[Math.floor(Math.random()*HORIZ.length)]} : {k:'v',n:LEVELS[Math.floor(Math.random()*LEVELS.length)],up:Math.random()<0.5}; const c=(X,r,Y)=> r.k==='h' ? `${X} is ${r.d} of ${Y}` : `${X} is ${r.n} ${r.n===1?'level':'levels'} ${r.up?'above':'below'} ${Y}`; const r1=pick(), r2=pick(); return `${c(A,r1,B)} and ${c(B,r2,C)}`; }
+function buildCompatible(sentence){ const P=parsePremise(sentence); const uniq=[...new Set(P.edges.flatMap(e=>[e.u,e.v]))].length; const labels=uniqueTokens(uniq); const map=new Map(); let i=0; const parts=P.edges.map(({u,v,rel})=>{ if(!map.has(u)) map.set(u,labels[i++]); if(!map.has(v)) map.set(v,labels[i++]); return clauseString(map.get(u),rel,map.get(v)); }); for(let j=parts.length-1;j>0;j--){ const k=Math.floor(Math.random()*(j+1)); [parts[j],parts[k]]=[parts[k],parts[j]]; } return parts.join(' and '); }
 
 /* ===================== TTS verbalization ===================== */
-function sayToken(tok){
-  const m=tok.match(/^([A-Z])(\d+)$/); if(!m) return tok;
-  const digits={'0':'zero','1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine'};
-  return `${m[1]} ${m[2].split('').map(d=>digits[d]||d).join(' ')}`;
-}
+function sayToken(tok){ const m=tok.match(/^([A-Z])(\d+)$/); if(!m) return tok; const digits={'0':'zero','1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine'}; return `${m[1]} ${m[2].split('').map(d=>digits[d]||d).join(' ')}`; }
 function splitDiag(dir){ return dir.replace(/northeast/gi,'north east').replace(/northwest/gi,'north west').replace(/southeast/gi,'south east').replace(/southwest/gi,'south west'); }
 function verbalizeClause(clause){
   let m=clause.match(/^([A-Z]\d+)\s+is\s+(one|two|three|1|2|3)\s*(?:levels?)?\s+(above|below)\s+(?:of\s+)?([A-Z]\d+)$/i);
-  if(m){
-    const left=sayToken(m[1]);
-    const n=+({one:1,two:2,three:3}[m[2].toLowerCase()] ?? m[2]);
-    const word=n===1?'one level':n===2?'two levels':'three levels';
-    const right=sayToken(m[4]);
-    return `${left} is ${word} ${m[3].toLowerCase()} ${right}`;
-  }
+  if(m){ const left=sayToken(m[1]); const n=+({one:1,two:2,three:3}[m[2].toLowerCase()] ?? m[2]); const word=n===1?'one level':n===2?'two levels':'three levels'; const right=sayToken(m[4]); return `${left} is ${word} ${m[3].toLowerCase()} ${right}`; }
   m=clause.match(/^([A-Z]\d+)\s+is\s+(north(?:east|west)?|south(?:east|west)?|east|west)\s+of\s+([A-Z]\d+)$/i);
   if(m){ return `${sayToken(m[1])} is ${splitDiag(m[2])} of ${sayToken(m[3])}`; }
   return clause;
@@ -365,156 +290,49 @@ function verbalizeSentence(s){ return s.split(/\s+and\s+/i).map(p=>verbalizeClau
 
 /* ===================== gameplay ===================== */
 let N=1, MAX=40, PAUSE_SEC=1.0, RATE=25;
-let idx=0, running=false, paused=false;
-let waitTimer=null;
-const history=[], planned=[];
-let correct=0, errors=0;
-let spokenParts=null, clauseIdx=0;
+let idx=0; let waitTimer=null; const history=[], planned=[]; let correct=0, errors=0; let spokenParts=null, clauseIdx=0;
 
-function planSequence(){
-  planned.length=0;
-  for(let i=0;i<MAX;i++){ planned.push(i>=N && Math.random()*100 < RATE); }
-}
+function planSequence(){ planned.length=0; for(let i=0;i<MAX;i++){ planned.push(i>=N && Math.random()*100 < RATE); } }
 function isActualMatch(i){ return i>=N && sentencesCompatible(history[i-N], history[i]); }
 
-function buildPremiseVisual(raw){
-  const parts=raw.split(/\s+and\s+/i).map(p=>p.trim());
-  const el=$('premiseText'); el.innerHTML='';
-  parts.forEach((part,i)=>{
-    const sp=document.createElement('span'); sp.className='rel'; sp.textContent=part; el.appendChild(sp);
-    if(i<parts.length-1){ const sep=document.createElement('span'); sep.className='sep'; sep.textContent=' and '; el.appendChild(sep); }
-  });
-  return parts;
-}
+function buildPremiseVisual(raw){ const parts=raw.split(/\s+and\s+/i).map(p=>p.trim()); const el=$('premiseText'); el.innerHTML=''; parts.forEach((part,i)=>{ const sp=document.createElement('span'); sp.className='rel'; sp.textContent=part; el.appendChild(sp); if(i<parts.length-1){ const sep=document.createElement('span'); sep.className='sep'; sep.textContent=' and '; el.appendChild(sep); } }); return parts; }
 function setActivePart(i){ [...$('premiseText').querySelectorAll('.rel')].forEach((n,idx)=>n.classList.toggle('active', idx===i)); }
 
-/* speak all parts with the SAME voice snapshot; pause after final relation too */
+// Speak all parts with the SAME voice snapshot; trailing pause to prevent cut-ins
 async function speakPremise(){
   if(!spokenParts) return;
-  const voiceSnap = VOICE; // lock voice for this entire premise
+  const voiceSnap = VOICE; // lock for the whole premise
   for(; running && !paused && clauseIdx<spokenParts.length; clauseIdx++){
     setActivePart(clauseIdx);
-    await speak(spokenParts[clauseIdx]+'.', voiceSnap);  // never switches mid-premise
+    await speak(spokenParts[clauseIdx]+'.', voiceSnap);
     if(!running || paused) return;
-    if(clauseIdx<spokenParts.length-1){
-      await new Promise(res=>{ waitTimer=setTimeout(()=>{waitTimer=null; res(); }, PAUSE_SEC*1000); });
-      if(!running || paused) return;
-      await sleep(40); // tiny settle to avoid “glitchy” cut-ins between clauses
-    }
+    if(clauseIdx<spokenParts.length-1){ await new Promise(res=>{ waitTimer=setTimeout(()=>{waitTimer=null; res(); }, PAUSE_SEC*1000); }); await sleep(30); }
   }
   setActivePart(-1);
-  // trailing pause after the last relation
-  if(running && !paused){
-    await new Promise(res=>{ waitTimer=setTimeout(()=>{waitTimer=null; res(); }, PAUSE_SEC*1000); });
-    await sleep(40);
-  }
+  if(running && !paused){ await new Promise(res=>{ waitTimer=setTimeout(()=>{waitTimer=null; res(); }, PAUSE_SEC*1000); }); await sleep(30); }
 }
 
 function maybeApplyPendingVoice(){
-  if(!pendingVoiceKey) return;
-  const found=voicesNow().find(v=>vKey(v)===pendingVoiceKey);
-  if(found){ VOICE=found; try{ localStorage.setItem(LAST_KEY,vKey(found)); }catch(_){ } }
-  pendingVoiceKey=null;
+  if(pendingVoiceKey){ const found=voicesNow().find(v=>vKey(v)===pendingVoiceKey); if(found){ VOICE=found; try{localStorage.setItem(LAST_KEY,vKey(found));}catch(_){}} pendingVoiceKey=null; }
+  if(pendingVoiceRefresh){ pendingVoiceRefresh=false; populateMenusStrict(); }
 }
 
-function nextPremiseString(){
-  const want=planned[idx] && idx>=N;
-  if(want) return buildCompatible(history[idx-N]);
-  let s, tries=0;
-  do{ s=randomPremise(); tries++; } while(idx>=N && sentencesCompatible(history[idx-N], s) && tries<300);
-  if(idx>=N && sentencesCompatible(history[idx-N], s)){
-    const P=parsePremise(s);
-    if(P.edges.length){
-      const e=P.edges[0];
-      if(e.rel.z){ e.rel.z*=-1; } else { e.rel.x*=-1; e.rel.y*=-1; }
-      s=P.edges.map(ed=>clauseString(ed.u, ed.rel, ed.v)).join(' and ');
-    }
-  }
-  return s;
-}
+function nextPremiseString(){ const want=planned[idx] && idx>=N; if(want) return buildCompatible(history[idx-N]); let s, tries=0; do{ s=randomPremise(); tries++; } while(idx>=N && sentencesCompatible(history[idx-N], s) && tries<300); if(idx>=N && sentencesCompatible(history[idx-N], s)){ const P=parsePremise(s); if(P.edges.length){ const e=P.edges[0]; if(e.rel.z){ e.rel.z*=-1; } else { e.rel.x*=-1; e.rel.y*=-1; } s=P.edges.map(ed=>clauseString(ed.u, ed.rel, ed.v)).join(' and '); } } return s; }
 
-async function runTrial(){
-  if(!running || paused) return;
-  if(idx>=MAX){ stop(); return; }
-
-  const s=nextPremiseString();
-  history[idx]=s;
-  buildPremiseVisual(s);
-  spokenParts=verbalizeSentence(s);
-  clauseIdx=0;
-
-  await speakPremise();            // includes trailing pause
-
-  if(!running || paused) return;
-
-  // Only now, between premises, allow voice switching
-  maybeApplyPendingVoice();
-
-  idx++; updateUI(); runTrial();
-}
+async function runTrial(){ if(!running || paused) return; if(idx>=MAX){ stop(); return; } const s=nextPremiseString(); history[idx]=s; buildPremiseVisual(s); spokenParts=verbalizeSentence(s); clauseIdx=0; await speakPremise(); if(!running || paused) return; maybeApplyPendingVoice(); idx++; updateUI(); runTrial(); }
 
 /* ===================== controls ===================== */
-function start(){
-  if(running) return;
-  running=true; paused=false;
-  planSequence(); idx=0; correct=0; errors=0; updateUI();
-  $('pause').disabled=false; $('reset').disabled=false; $('hit').disabled=false; $('skip').disabled=false;
-  runTrial();
-}
-function stop(){
-  running=false; paused=false;
-  clearTimeout(waitTimer); waitTimer=null;
-  spokenParts=null; clauseIdx=0;
-  try{ speechSynthesis.cancel(); }catch(_){}
-  $('pause').disabled=true; $('skip').disabled=true;
-}
-function togglePause(){
-  if(!running && !paused) return;
-  if(!paused){
-    paused=true; clearTimeout(waitTimer); waitTimer=null;
-    try{ speechSynthesis.cancel(); }catch(_){}
-    $('pause').textContent='▶ Resume';
-  } else {
-    paused=false; $('pause').textContent='⏸ Pause';
-    // resume within premise (keeps same voice snapshot), else advance
-    if(spokenParts && clauseIdx<spokenParts.length){
-      speakPremise().then(()=>{ if(running && !paused){ maybeApplyPendingVoice(); idx++; updateUI(); runTrial(); } });
-    } else {
-      maybeApplyPendingVoice();
-      idx++; updateUI(); runTrial();
-    }
-  }
-}
-function reset(){
-  stop(); $('start').disabled=false; $('pause').textContent='⏸ Pause';
-  idx=0; correct=0; errors=0; $('premiseText').textContent='—'; updateUI();
-}
+function start(){ if(running) return; running=true; paused=false; try{speechSynthesis.cancel();}catch(_){ } planSequence(); idx=0; correct=0; errors=0; updateUI(); $('pause').disabled=false; $('reset').disabled=false; $('hit').disabled=false; $('skip').disabled=false; runTrial(); }
+function stop(){ running=false; paused=false; clearTimeout(waitTimer); waitTimer=null; spokenParts=null; clauseIdx=0; try{ speechSynthesis.cancel(); }catch(_){} $('pause').disabled=true; $('skip').disabled=true; }
+function togglePause(){ if(!running && !paused) return; if(!paused){ paused=true; clearTimeout(waitTimer); waitTimer=null; try{ speechSynthesis.cancel(); }catch(_){} $('pause').textContent='▶ Resume'; } else { paused=false; $('pause').textContent='⏸ Pause'; if(spokenParts && clauseIdx<spokenParts.length){ speakPremise().then(()=>{ if(running && !paused){ maybeApplyPendingVoice(); idx++; updateUI(); runTrial(); } }); } else { maybeApplyPendingVoice(); idx++; updateUI(); runTrial(); } } }
+function reset(){ stop(); $('start').disabled=false; $('pause').textContent='⏸ Pause'; idx=0; correct=0; errors=0; $('premiseText').textContent='—'; updateUI(); }
 function registerHit(){ if(!running) return; if(isActualMatch(idx)) correct++; else errors++; updateUI(); }
-function skip(){ if(!running) return; clearTimeout(waitTimer); try{speechSynthesis.cancel();}catch(_){}
-  maybeApplyPendingVoice(); idx++; updateUI(); runTrial(); }
-function updateUI(){
-  $('idx').textContent=idx; $('max').textContent=MAX;
-  $('ptype').textContent = planned[idx] && idx>=N ? 'planned MATCH' : 'planned NON-match';
-  $('isMatch').textContent = idx>=N ? String(isActualMatch(idx)).toUpperCase() : '—';
-  $('corr').textContent=correct; $('err').textContent=errors;
-  $('nVal').textContent=N; $('tVal').textContent=MAX; $('pVal').textContent=PAUSE_SEC.toFixed(1)+' s'; $('rVal').textContent=RATE+'%';
-}
+function skip(){ if(!running) return; clearTimeout(waitTimer); try{speechSynthesis.cancel();}catch(_){} maybeApplyPendingVoice(); idx++; updateUI(); runTrial(); }
+function updateUI(){ $('idx').textContent=idx; $('max').textContent=MAX; $('ptype').textContent = planned[idx] && idx>=N ? 'planned MATCH' : 'planned NON-match'; $('isMatch').textContent = idx>=N ? String(isActualMatch(idx)).toUpperCase() : '—'; $('corr').textContent=correct; $('err').textContent=errors; $('nVal').textContent=N; $('tVal').textContent=MAX; $('pVal').textContent=PAUSE_SEC.toFixed(1)+' s'; $('rVal').textContent=RATE+'%'; }
 
 /* ===================== bindings ===================== */
-$('start').onclick = async ()=>{
-  if(!VOICE){
-    populateMenusFast();
-    const raw=voicesNow(); if(raw.length){ VOICE=chooseBestVoice(raw); try{localStorage.setItem(LAST_KEY,vKey(VOICE));}catch(_){ } }
-  }
-  await warmupTTS();              // prime engine to avoid first-utterance glitch
-  await speak('Ready.', VOICE);   // audible confirmation
-  start();
-};
-$('pause').onclick=togglePause;
-$('reset').onclick=reset;
-$('hit').onclick=registerHit;
-$('skip').onclick=skip;
-window.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='m') registerHit(); });
+$('start').onclick = async ()=>{ if(!VOICE){ populateMenusStrict(); const pool=voicesNow().filter(approvedFemaleStrict); if(pool.length){ const best=chooseBestVoice(pool); if(best){ VOICE=best; try{localStorage.setItem(LAST_KEY,vKey(best));}catch(_){}} } } await warmupTTS(); await speak('Ready.', VOICE); start(); };
+$('pause').onclick=togglePause; $('reset').onclick=reset; $('hit').onclick=registerHit; $('skip').onclick=skip; window.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='m') registerHit(); });
 
 // sliders
 $('n').oninput=e=>{ N=+e.target.value; $('nVal').textContent=N; };
@@ -523,24 +341,11 @@ $('pauseTime').oninput=e=>{ PAUSE_SEC=+e.target.value; $('pVal').textContent=PAU
 $('rate').oninput=e=>{ RATE=+e.target.value; $('rVal').textContent=RATE+'%'; };
 
 // voice UI init
-$('refreshVoices').onclick=()=>populateMenusFast();
-$('testVoice').onclick=async()=>{
-  if(!VOICE) populateMenusFast();
-  await warmupTTS();
-  await speak('Voice check. Example: C three is north east of H seven.', VOICE);
-};
-
-// range labels live update
-$('vRate').oninput=e=>{ $('rateVal').textContent= (+e.target.value).toFixed(2); };
-$('vPitch').oninput=e=>{ $('pitchVal').textContent= (+e.target.value).toFixed(2); };
-$('vVol').oninput=e=>{ $('vVolVal').textContent= (+e.target.value).toFixed(2); };
+$('refreshVoices').onclick=()=>populateMenusStrict();
+$('testVoice').onclick=async()=>{ if(!VOICE) populateMenusStrict(); await warmupTTS(); await speak('Voice check. Example: C three is north east of H seven.', VOICE); };
 
 /* ===================== immediate paint ===================== */
-document.addEventListener('DOMContentLoaded', ()=>{
-  populateMenusFast();
-  applyVoiceDefaults();
-  $('voiceStatus').textContent='Ready';
-});
+document.addEventListener('DOMContentLoaded', ()=>{ populateMenusStrict(); applyVoiceDefaults(); $('voiceStatus').textContent='Ready'; });
 </script>
 </body>
 </html>
