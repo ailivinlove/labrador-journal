@@ -47,24 +47,22 @@ select{ min-height:38px }
 
     <div class="col">
       <div class="box" id="voiceBox">
-        <div class="title">Voice <span id="voiceStatus" class="badge">Loading…</span></div>
+        <div class="title">Voice <span id="voiceStatus" class="badge">Ready</span></div>
         <label>Country / Region</label>
-        <select id="regionSelect"><option>Loading…</option></select>
+        <select id="regionSelect"></select>
         <label>Voice</label>
-        <select id="voice"><option>Loading…</option></select>
-        <div class="mut" id="voiceHint" style="margin-top:6px;"></div>
-        <label style="margin-top:10px">Rate: <span id="rateVal">0.92</span></label>
-        <input id="vRate" type="range" min="0.7" max="1.6" step="0.01" value="0.92">
+        <select id="voice"></select>
+        <div class="mut" id="voiceHint" style="margin-top:6px;">Menus fill instantly; they’ll auto-update if the system exposes more voices.</div>
+        <label style="margin-top:10px">Rate: <span id="rateVal">0.95</span></label>
+        <input id="vRate" type="range" min="0.7" max="1.6" step="0.01" value="0.95">
         <label>Pitch: <span id="pitchVal">1.28</span></label>
         <input id="vPitch" type="range" min="0.7" max="2" step="0.01" value="1.28">
         <label>Volume: <span id="vVolVal">1.00</span></label>
         <input id="vVol" type="range" min="0" max="1" step="0.05" value="1.0">
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
           <button id="testVoice" class="btn" type="button">Test voice</button>
-          <button id="preloadVoices" class="btn" type="button">Preload / Verify</button>
-          <button id="refreshVoices" class="btn" type="button">Refresh list</button>
+          <button id="refreshVoices" class="btn" type="button">Refresh</button>
         </div>
-        <div class="mut" style="margin-top:6px">Tip: pick a local region (e.g., Australia) for crisp pronunciation.</div>
       </div>
     </div>
 
@@ -93,11 +91,11 @@ select{ min-height:38px }
 </div>
 
 <script>
-/* ===== helpers ===== */
+/* ===================== helpers ===================== */
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
 
-/* ===== 8 compass directions ===== */
+/* ===================== directions ===================== */
 const DIRS = {
   north:{x:0,y:-1}, south:{x:0,y:1}, east:{x:1,y:0}, west:{x:-1,y:0},
   northeast:{x:1,y:-1}, northwest:{x:-1,y:-1}, southeast:{x:1,y:1}, southwest:{x:-1,y:1}
@@ -105,10 +103,17 @@ const DIRS = {
 const HORIZ = Object.keys(DIRS);
 const LEVELS = [1,2,3];
 
-/* ===== VOICE: robust, verified, female-first; fallback to any working if needed ===== */
+/* ===================== ultra-fast voice loader =====================
+   Goals:
+   - ZERO long preloads. Render instantly.
+   - No verification loops. We pick best candidate immediately.
+   - If a voice fails at speak-time, we auto-fallback to the next one (no blocking).
+   - Persist the last working voice to reuse on next load.
+*/
 let VOICE=null;
 let userRateChanged=false, userPitchChanged=false;
-const vKey=v=>v.voiceURI||(v.name+'|'+v.lang);
+const LAST_KEY='rnback_last_voice_v1';
+
 const REGION_NAMES={ AE:'United Arab Emirates', AU:'Australia', GB:'United Kingdom', UK:'United Kingdom',
   US:'United States', CA:'Canada', NZ:'New Zealand', IE:'Ireland', IN:'India', ZA:'South Africa',
   PH:'Philippines', SG:'Singapore', HK:'Hong Kong', NG:'Nigeria'
@@ -116,186 +121,127 @@ const REGION_NAMES={ AE:'United Arab Emirates', AU:'Australia', GB:'United Kingd
 const regionCode=lang=>(String(lang).match(/^[a-z]{2,3}[-_]?([A-Z]{2})/)||[])[1]||'';
 const regionName=lang=> (regionCode(lang)==='AE' ? 'United Arab Emirates'
                          : REGION_NAMES[regionCode(lang)] || (/^en\b/i.test(lang)?'Global English':'Other Region'));
+
 const MALE_NEG=/\b(male|boy|man|daniel|david|george|michael|mark|tom|fred|brian|kevin|liam|adam|andy|ben|bruce|charles|chris|eric|frank|jack|john|luke|matt|mike|nathan|paul|peter|ryan|steve|tim|alex(?!a)|james|william|robert|andrew|henry|richard|pablo|ricardo|mateo)\b/i;
 const FEMALE_TOKENS=/\b(zira|samantha|karen|moira|tessa|serena|veena|victoria|joanna|jenny|aria|jessa|kimberly|kendra|ivy|nicole|salli|olivia|ella|ava|amy|emma|mia|sophia|isabella|natasha|catherine|allison|chloe|grace|zoe|sarah|sofia|camila|paulina|luciana|monica|anna|tatyana|zhiyu|hazel|helen|riva|luna|maya|noor|nour|layla|leila|hala|mariam|maryam|salma|dana|rania|yasmin|yasmine|amal|reem|farah|fatima|fatma|huda|nada|noura|nura)\b/i;
 
-function isStrictFemale(v){
-  const n=(v.name+' '+v.voiceURI).toLowerCase();
-  if(MALE_NEG.test(n)) return false;
-  if(/\bfemale\b/.test(n)) return true;
-  if(FEMALE_TOKENS.test(n)) return true;
-  const isAE = /(^|\b)(ar|en)[-_]?ae(\b|$)/i.test(v.lang);
-  if(isAE && FEMALE_TOKENS.test(n)) return true;
-  return false;
-}
-function isSoftFemale(v){
-  const n=(v.name+' '+v.voiceURI).toLowerCase();
-  return !MALE_NEG.test(n) && !/\bmale\b/.test(n);
-}
-
-const POOLS={
- 'United Arab Emirates':['Layla','Noor','Hala','Mariam','Salma','Dana','Rania','Yasmin','Amal','Leila'],
- 'Australia':['Zoe','Isla','Mia','Sophie','Olivia','Ava','Ella','Grace','Ruby','Lily','Chloe'],
- 'United Kingdom':['Sophie','Amelia','Olivia','Grace','Ava','Emily','Isla','Lucy','Chloe','Mia'],
- 'United States':['Amy','Emma','Ava','Mia','Sophia','Isabella','Olivia','Ella','Zoe','Grace'],
- 'Canada':['Sophie','Chloe','Amelia','Maya','Ella','Zoe','Olivia','Emma','Ava','Mia'],
- 'Ireland':['Aoife','Saoirse','Niamh','Aisling','Ciara','Orla','Molly','Katie','Ella','Chloe'],
- 'New Zealand':['Aria','Isla','Olivia','Ava','Emily','Sophie','Mia','Zoe','Ella','Grace'],
- 'South Africa':['Tessa','Leah','Olivia','Mia','Ava','Ella','Zoe','Grace','Ruby','Chloe'],
- 'Global English':['Amy','Ella','Zoe','Mia','Ava','Sophie','Lily','Ruby','Grace','Chloe'],
- 'Other Region':['Amy','Ella','Zoe','Mia','Ava','Sophie','Lily','Ruby','Grace','Chloe']
-};
-function properCase(s){ return s.charAt(0).toUpperCase()+s.slice(1).toLowerCase(); }
-function extractFemaleToken(name){
-  const lower=(name||'').toLowerCase();
-  const ms=lower.match(/microsoft\s+([a-z]+)/i);
-  if(ms && FEMALE_TOKENS.test(ms[1])) return properCase(ms[1]);
-  const m=lower.match(FEMALE_TOKENS); if(m) return properCase(m[0]);
-  if(/\bfemale\b/i.test(lower)) return null;
-  return null;
-}
-function labelForVoice(v){
-  const t=extractFemaleToken(v.name||v.voiceURI||'');
-  if(t) return t;
-  const region=regionName(v.lang);
-  const pool=POOLS[region]||POOLS['Other Region'];
-  let h=0; const key=vKey(v); for(let i=0;i<key.length;i++) h=(h*31+key.charCodeAt(i))>>>0;
-  return pool[h % pool.length];
-}
-
-function tieredFilter(raw){
-  // Strict female → Soft female → Any (last-resort so sound still works)
-  let list=raw.filter(isStrictFemale), tier='A';
-  if(!list.length){ list=raw.filter(isSoftFemale); tier='B'; }
-  if(!list.length){ list=raw.slice(); tier='C'; }
-  // prefer AU/GB/US, then AE
-  list.sort((a,b)=>{
-    const score=(v)=> ( /^en[-_](AU|GB|US)/i.test(v.lang)?3 : /AE$/i.test(v.lang)?2 : 1 )
-      + (/\bfemale\b/i.test(v.name)?0.4:0)
-      + (FEMALE_TOKENS.test((v.name+' '+v.voiceURI))?0.2:0);
-    return score(b)-score(a);
-  });
-  return {list,tier};
-}
-
-/* verification — speaks a tiny muted blip; removes broken voices from UI; caches successes */
-const CACHE_KEY='rnback_voice_ok_v10';
-function loadCache(){ try{return JSON.parse(localStorage.getItem(CACHE_KEY)||'{}');}catch(_){return{};} }
-function saveCache(obj){ try{localStorage.setItem(CACHE_KEY,JSON.stringify(obj));}catch(_){ } }
-const okCache=loadCache();
-
-function setStatus(t){ $('voiceStatus').textContent=t; }
-function clearStatus(){ setStatus('Ready'); }
-
 function voicesNow(){ try{ return speechSynthesis.getVoices()||[]; }catch(_){ return []; } }
-async function warmEngine(){
-  if(!('speechSynthesis' in window)) return;
-  try{ const u=new SpeechSynthesisUtterance(''); u.volume=0; u.rate=10; speechSynthesis.speak(u); }catch(_){}
+function vKey(v){ return v.voiceURI||(v.name+'|'+v.lang); }
+function labelForVoice(v){
+  const lower=(v.name+' '+v.voiceURI).toLowerCase();
+  const m=lower.match(FEMALE_TOKENS);
+  if(m){ const s=m[0]; return s.charAt(0).toUpperCase()+s.slice(1); }
+  const region=regionName(v.lang);
+  const pools={
+    'United Arab Emirates':['Layla','Noor','Hala','Mariam','Salma','Dana','Rania','Yasmin','Amal','Leila'],
+    'Australia':['Zoe','Isla','Mia','Sophie','Olivia','Ava','Ella','Grace','Ruby','Lily','Chloe'],
+    'United Kingdom':['Sophie','Amelia','Olivia','Grace','Ava','Emily','Isla','Lucy','Chloe','Mia'],
+    'United States':['Amy','Emma','Ava','Mia','Sophia','Isabella','Olivia','Ella','Zoe','Grace'],
+    'Global English':['Amy','Ella','Zoe','Mia','Ava','Sophie','Lily','Ruby','Grace','Chloe'],
+    'Other Region':['Ella','Zoe','Mia','Ava','Sophie','Lily','Ruby','Grace','Chloe']
+  };
+  const pool=pools[region]||pools['Other Region'];
+  let h=0, key=vKey(v); for(let i=0;i<key.length;i++) h=(h*31+key.charCodeAt(i))>>>0;
+  return pool[h%pool.length];
 }
-async function verifyVoice(v, timeout=900){
+function femaleScore(v){
+  const n=(v.name+' '+v.voiceURI).toLowerCase();
+  let s=0;
+  if(/\bfemale\b/.test(n)) s+=3;
+  if(FEMALE_TOKENS.test(n)) s+=2;
+  if(!MALE_NEG.test(n)) s+=1;
+  if(/AE$/i.test(v.lang)) s+=1;                 // UAE priority if present
+  if(/^en[-_](AU|GB|US)/i.test(v.lang)) s+=1;    // common English locales
+  return s;
+}
+function chooseBestVoice(list){
+  // 1) last saved, if present
+  try{
+    const last=localStorage.getItem(LAST_KEY);
+    if(last){ const found=list.find(v=>vKey(v)===last); if(found) return found; }
+  }catch(_){}
+  // 2) highest femaleScore
+  const sorted=list.slice().sort((a,b)=>femaleScore(b)-femaleScore(a));
+  // prefer Australia quickly (often fastest to speak on AU systems)
+  const au=sorted.find(v=>/en[-_]?AU/i.test(v.lang));
+  return au || sorted[0] || null;
+}
+function populateMenusFast() {
+  const regionsOrder=['Australia','United Kingdom','United States','United Arab Emirates','Canada','Ireland','New Zealand','South Africa','Global English','Other Region'];
+  const regionSel=$('regionSelect'); regionSel.innerHTML='';
+  regionsOrder.forEach(r=>{ const o=document.createElement('option'); o.value=r; o.textContent=r; regionSel.appendChild(o); });
+  regionSel.value='Australia';
+
+  const voiceSel=$('voice'); voiceSel.innerHTML='';
+  const raw=voicesNow();
+  const list = raw.filter(v=>{
+    const n=(v.name+' '+v.voiceURI).toLowerCase();
+    // fast female-ish filter; if it eliminates everything, we’ll refill on Refresh
+    return FEMALE_TOKENS.test(n) || (!MALE_NEG.test(n) && /\bfemale\b/.test(n));
+  });
+  const use = list.length? list : raw; // never leave empty
+  const inRegion = (r)=>use.filter(v=>regionName(v.lang)===r);
+
+  function fillVoicesFor(region){
+    voiceSel.innerHTML='';
+    const pack=inRegion(region);
+    (pack.length?pack:use).forEach(v=>{
+      const o=document.createElement('option');
+      o.value=vKey(v); o.textContent=labelForVoice(v);
+      o.title=`${v.name} — ${regionName(v.lang)} — ${v.lang}`;
+      voiceSel.appendChild(o);
+    });
+    const best=chooseBestVoice(use);
+    if(best){ VOICE=best; voiceSel.value=vKey(best); }
+  }
+  fillVoicesFor(regionSel.value);
+
+  regionSel.onchange=()=>fillVoicesFor(regionSel.value);
+  voiceSel.onchange=()=>{ const key=voiceSel.value; const found=voicesNow().find(v=>vKey(v)===key); if(found){ VOICE=found; try{localStorage.setItem(LAST_KEY,vKey(found));}catch(_){}} };
+  // if the engine later exposes more voices, rebuild menus quickly without blocking
+  if('speechSynthesis' in window){
+    speechSynthesis.onvoiceschanged = ()=>{
+      populateMenusFast(); // re-run quickly with new list
+    };
+  }
+}
+function applyVoiceDefaults(){
+  if(!userRateChanged){ $('vRate').value=0.95; $('rateVal').textContent='0.95'; }
+  if(!userPitchChanged){ $('vPitch').value=1.28; $('pitchVal').textContent='1.28'; }
+}
+
+/* Speaking — instant, with fast fallback if a particular voice errors. */
+async function speak(text){
+  if(!('speechSynthesis' in window)){ return; }
+  const u=new SpeechSynthesisUtterance(text);
+  if(VOICE) u.voice=VOICE;
+  u.lang=(VOICE&&VOICE.lang) ? VOICE.lang : 'en-AU';
+  u.rate=+$('vRate').value; u.pitch=+$('vPitch').value; u.volume=+$('vVol').value;
+
   return new Promise(res=>{
-    let done=false;
-    const u=new SpeechSynthesisUtterance('check');
-    u.voice=v; u.lang=v.lang; u.volume=0.001; u.rate=1; u.pitch=1.2;
-    const finish=(ok)=>{ if(!done){ done=true; try{speechSynthesis.cancel();}catch(_){ } res(ok);} };
-    const to=setTimeout(()=>finish(false), timeout);
-    u.onstart=()=>{ clearTimeout(to); finish(true); };
-    u.onend=()=>{ clearTimeout(to); finish(true); };
-    u.onerror=()=>{ clearTimeout(to); finish(false); };
-    try{ speechSynthesis.speak(u); }catch(_){ clearTimeout(to); finish(false); }
+    let settled=false; const done=()=>{ if(!settled){ settled=true; res(); } };
+    u.onend=done;
+    u.onerror=()=>{
+      // quick fallback: try another candidate immediately (no scanning delays)
+      const pool=voicesNow();
+      const alt = pool.find(v=>vKey(v)!== (VOICE? vKey(VOICE):'')) || null;
+      if(alt){
+        VOICE=alt; try{localStorage.setItem(LAST_KEY,vKey(alt));}catch(_){}
+        const u2=new SpeechSynthesisUtterance(text);
+        u2.voice=VOICE; u2.lang=VOICE.lang; u2.rate=u.rate; u2.pitch=u.pitch; u2.volume=u.volume;
+        u2.onend=done; u2.onerror=done;
+        try{ speechSynthesis.speak(u2); }catch(_){ done(); }
+      } else { done(); }
+    };
+    try{
+      if(speechSynthesis.speaking) speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+      setTimeout(done, 7000); // safety
+    }catch(_){ done(); }
   });
 }
-async function verifyList(list){
-  const ok=[];
-  for(const v of list){
-    const key=vKey(v);
-    const cached=okCache[key];
-    if(cached && Date.now()-cached.ts<14*24*3600*1000){ ok.push(v); continue; }
-    /* eslint-disable no-await-in-loop */
-    const good=await verifyVoice(v, 900);
-    if(good){ ok.push(v); okCache[key]={ts:Date.now(), name:v.name, lang:v.lang}; }
-  }
-  saveCache(okCache);
-  return ok;
-}
 
-function populateRegions(voices){
-  const regions=[...new Set(voices.map(v=>regionName(v.lang)))];
-  const sel=$('regionSelect'); sel.innerHTML='';
-  const order=['Australia','United Kingdom','United States','United Arab Emirates','Canada','Ireland','New Zealand','South Africa','Global English','Other Region'];
-  (regions.length? order.filter(r=>regions.includes(r)) : order).forEach(r=>{
-    const o=document.createElement('option'); o.value=r; o.textContent=r; sel.appendChild(o);
-  });
-  // Prefer Australia if available (to avoid the “only Chloe” effect by loading AU first then others)
-  sel.value = regions.includes('Australia') ? 'Australia' : (regions[0]||order[0]);
-}
-function populateVoicesForRegion(voices){
-  const region=$('regionSelect').value;
-  const list=voices.filter(v=>regionName(v.lang)===region);
-  const sel=$('voice'); sel.innerHTML='';
-  if(!list.length){
-    // fallback to any region that has items
-    if(voices.length){
-      const fbRegion=regionName(voices[0].lang);
-      $('regionSelect').value=fbRegion;
-      const fb=voices.filter(v=>regionName(v.lang)===fbRegion);
-      fb.forEach(v=>{ const o=document.createElement('option'); o.value=vKey(v); o.textContent=labelForVoice(v); o.title=`${v.name} — ${fbRegion} — ${v.lang}`; sel.appendChild(o); });
-      if(fb.length){ VOICE=fb[0]; $('voiceHint').textContent='Auto-selected a working region.'; }
-    }else{
-      const o=document.createElement('option'); o.textContent='No system voices found'; o.disabled=true; o.selected=true; sel.appendChild(o);
-    }
-    return;
-  }
-  list.forEach(v=>{ const o=document.createElement('option'); o.value=vKey(v); o.textContent=labelForVoice(v); o.title=`${v.name} — ${region} — ${v.lang}`; sel.appendChild(o); });
-  if(list.length){ VOICE=list[0]; $('voiceHint').textContent='Voices ready.'; }
-}
-
-async function loadVoicesRobust(){
-  setStatus('Loading…');
-  await warmEngine();
-
-  // multi-pass poll up to 5s
-  let raw=voicesNow(); const deadline=performance.now()+5000;
-  while(!raw.length && performance.now()<deadline){ await sleep(150); raw=voicesNow(); }
-  if(!raw.length){ setStatus('No voices'); $('voiceHint').textContent='No OS voices exposed. Check system speech settings & HTTPS.'; return []; }
-
-  // female-first, then verify; if nothing verified, widen filter
-  let {list,tier}=tieredFilter(raw);
-  let ok=await verifyList(list);
-
-  if(!ok.length && tier!=='C'){
-    // widen and verify again so we don’t get “only Chloe”
-    ({list,tier}=tieredFilter(raw.slice())); ok=await verifyList(list);
-  }
-  if(!ok.length){ ok = list.length? list : raw; } // last resort: still show something
-
-  populateRegions(ok);
-  populateVoicesForRegion(ok);
-  applyFeminineDefaultsIfUntouched(tier);
-  clearStatus();
-  // background re-verify to prune any that silently fail later
-  setTimeout(async()=>{
-    const post=await verifyList(ok);
-    if(post.length && post.length!==ok.length){ populateRegions(post); populateVoicesForRegion(post); }
-  }, 50);
-  return ok;
-}
-
-function applyFeminineDefaultsIfUntouched(tier='A'){
-  if(!userRateChanged){ $('vRate').value=0.92; $('rateVal').textContent='0.92'; }
-  if(!userPitchChanged){ const base=tier==='C'?1.34:1.28; $('vPitch').value=base; $('pitchVal').textContent=base.toFixed(2); }
-}
-
-$('regionSelect').onchange=()=>populateVoicesForRegion(voicesNow().length? voicesNow(): []);
-$('voice').onchange=()=>{ const key=$('voice').value; const found=voicesNow().find(v=>vKey(v)===key); if(found) VOICE=found; };
-$('preloadVoices').onclick=async()=>{ await loadVoicesRobust(); };
-$('refreshVoices').onclick=async()=>{ await loadVoicesRobust(); };
-$('testVoice').onclick=async()=>{ if(!VOICE){ await loadVoicesRobust(); } await speak('Voice check. Example: C three is north east of H seven.'); };
-$('vRate').oninput=e=>{ userRateChanged=true; $('rateVal').textContent=(+e.target.value).toFixed(2); };
-$('vPitch').oninput=e=>{ userPitchChanged=true; $('pitchVal').textContent=(+e.target.value).toFixed(2); };
-$('vVol').oninput=e=>{ $('vVolVal').textContent=(+e.target.value).toFixed(2); };
-
-/* ===== Relational parsing ===== */
+/* ===================== strict relational logic (with reversible relations) ===================== */
 const LETTERS='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const token=()=> LETTERS[Math.floor(Math.random()*26)] + (1+Math.floor(Math.random()*9));
 function uniqueTokens(k){ const s=new Set(); while(s.size<k) s.add(token()); return [...s]; }
@@ -323,8 +269,6 @@ function parsePremise(sentence){
   }
   return {nodes:[...nodes], edges};
 }
-
-/* ===== N-match with reversible relations (X south of Y ≡ Y north of X) ===== */
 function invertRel(r){ return {x:-r.x, y:-r.y, z:-r.z}; }
 function canonEdge(u,v,rel){
   if(u<=v){ return {a:u, b:v, rel:`${rel.x},${rel.y},${rel.z}`}; }
@@ -364,7 +308,7 @@ function sentencesCompatible(a,b){
   return false;
 }
 
-/* ===== builders ===== */
+/* ===================== builders ===================== */
 function clauseString(from, rel, to){
   if(rel.z){
     const n=Math.abs(rel.z), word=n===1?'one level':n===2?'two levels':'three levels';
@@ -396,7 +340,7 @@ function buildCompatible(sentence){
   return parts.join(' and ');
 }
 
-/* ===== TTS verbalization + playback ===== */
+/* ===================== TTS verbalization ===================== */
 function sayToken(tok){
   const m=tok.match(/^([A-Z])(\d+)$/); if(!m) return tok;
   const digits={'0':'zero','1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine'};
@@ -418,31 +362,7 @@ function verbalizeClause(clause){
 }
 function verbalizeSentence(s){ return s.split(/\s+and\s+/i).map(p=>verbalizeClause(p.trim())); }
 
-/* Speak with unlock + retry fallback */
-async function speak(text){
-  if(!('speechSynthesis' in window)) return;
-  const u=new SpeechSynthesisUtterance(text);
-  if(VOICE) u.voice=VOICE;
-  u.lang=(VOICE&&VOICE.lang) ? VOICE.lang : 'en-AU';
-  u.rate=+$('vRate').value; u.pitch=+$('vPitch').value; u.volume=+$('vVol').value;
-  return new Promise(res=>{
-    let settled=false; const safe=()=>{ if(!settled){ settled=true; res(); } };
-    u.onend=safe; u.onerror=async()=>{ // auto-fix: pick another verified voice and retry once
-      const list=await loadVoicesRobust();
-      const found=list.find(v=>vKey(v)!== (VOICE? vKey(VOICE):''));
-      if(found){ VOICE=found; const u2=new SpeechSynthesisUtterance(text); u2.voice=VOICE; u2.lang=VOICE.lang; u2.rate=u.rate; u2.pitch=u.pitch; u2.volume=u.volume; u2.onend=safe; u2.onerror=safe; speechSynthesis.speak(u2); }
-      else safe();
-    };
-    try{
-      if(speechSynthesis.speaking) speechSynthesis.cancel();
-      speechSynthesis.speak(u);
-      setTimeout(safe, 8000);
-    }catch(_){ safe(); }
-  });
-}
-function cancelSpeech(){ try{ speechSynthesis.cancel(); }catch(_){} }
-
-/* ===== gameplay (ONLY pause controls pacing) ===== */
+/* ===================== gameplay ===================== */
 let N=1, MAX=40, PAUSE_SEC=1.0, RATE=25;
 let idx=0, running=false, paused=false;
 let waitTimer=null;
@@ -452,9 +372,7 @@ let spokenParts=null, clauseIdx=0;
 
 function planSequence(){
   planned.length=0;
-  for(let i=0;i<MAX;i++){
-    planned.push(i>=N && Math.random()*100 < RATE);
-  }
+  for(let i=0;i<MAX;i++){ planned.push(i>=N && Math.random()*100 < RATE); }
 }
 function isActualMatch(i){ return i>=N && sentencesCompatible(history[i-N], history[i]); }
 
@@ -471,7 +389,6 @@ function setActivePart(i){ [...$('premiseText').querySelectorAll('.rel')].forEac
 
 async function speakPremise(){
   if(!spokenParts) return;
-  // ensure audio unlocked (some browsers need a voiced utterance after click)
   for(; running && !paused && clauseIdx<spokenParts.length; clauseIdx++){
     setActivePart(clauseIdx);
     await speak(spokenParts[clauseIdx]+'.');
@@ -513,16 +430,10 @@ async function runTrial(){
   idx++; updateUI(); runTrial();
 }
 
-/* controls */
-async function ensureVoice(){
-  let raw=voicesNow();
-  if(!raw.length){ await loadVoicesRobust(); raw=voicesNow(); }
-  const list=(await loadVoicesRobust())||[];
-  if(list.length){ VOICE=list[0]; }
-}
+/* ===================== controls ===================== */
 function start(){
   if(running) return;
-  running=true; paused=false; cancelSpeech();
+  running=true; paused=false; try{speechSynthesis.cancel();}catch(_){}
   planSequence(); idx=0; correct=0; errors=0; updateUI();
   $('pause').disabled=false; $('reset').disabled=false; $('hit').disabled=false; $('skip').disabled=false;
   runTrial();
@@ -531,21 +442,19 @@ function stop(){
   running=false; paused=false;
   clearTimeout(waitTimer); waitTimer=null;
   spokenParts=null; clauseIdx=0;
-  cancelSpeech();
+  try{ speechSynthesis.cancel(); }catch(_){}
   $('pause').disabled=true; $('skip').disabled=true;
 }
 function togglePause(){
   if(!running && !paused) return;
   if(!paused){
-    paused=true; clearTimeout(waitTimer); waitTimer=null; cancelSpeech();
+    paused=true; clearTimeout(waitTimer); waitTimer=null; try{speechSynthesis.cancel();}catch(_){}
     $('pause').textContent='▶ Resume';
   } else {
     paused=false; $('pause').textContent='⏸ Pause';
     if(spokenParts && clauseIdx<spokenParts.length){
       speakPremise().then(()=>{ if(running && !paused){ idx++; updateUI(); runTrial(); } });
-    } else {
-      idx++; updateUI(); runTrial();
-    }
+    } else { idx++; updateUI(); runTrial(); }
   }
 }
 function reset(){
@@ -553,7 +462,8 @@ function reset(){
   idx=0; correct=0; errors=0; $('premiseText').textContent='—'; updateUI();
 }
 function registerHit(){ if(!running) return; if(isActualMatch(idx)) correct++; else errors++; updateUI(); }
-function skip(){ if(!running) return; clearTimeout(waitTimer); cancelSpeech(); idx++; updateUI(); runTrial(); }
+function skip(){ if(!running) return; clearTimeout(waitTimer); try{speechSynthesis.cancel();}catch(_){}
+  idx++; updateUI(); runTrial(); }
 function updateUI(){
   $('idx').textContent=idx; $('max').textContent=MAX;
   $('ptype').textContent = planned[idx] && idx>=N ? 'planned MATCH' : 'planned NON-match';
@@ -562,11 +472,14 @@ function updateUI(){
   $('nVal').textContent=N; $('tVal').textContent=MAX; $('pVal').textContent=PAUSE_SEC.toFixed(1)+' s'; $('rVal').textContent=RATE+'%';
 }
 
-/* bindings */
+/* ===================== bindings ===================== */
 $('start').onclick = async ()=>{
-  await loadVoicesRobust();
-  await ensureVoice();
-  // unlock audio on same user gesture
+  // instant: populate menus (fast) and pick a voice immediately
+  if(!VOICE){
+    populateMenusFast();
+    const raw=voicesNow(); if(raw.length){ VOICE=chooseBestVoice(raw); try{localStorage.setItem(LAST_KEY,vKey(VOICE));}catch(_){} }
+  }
+  // unlock audio on the same gesture
   await speak('Ready.');
   start();
 };
@@ -582,11 +495,19 @@ $('trials').oninput=e=>{ MAX=+e.target.value; $('tVal').textContent=MAX; $('max'
 $('pauseTime').oninput=e=>{ PAUSE_SEC=+e.target.value; $('pVal').textContent=PAUSE_SEC.toFixed(1)+' s'; };
 $('rate').oninput=e=>{ RATE=+e.target.value; $('rVal').textContent=RATE+'%'; };
 
-/* initial load for menus */
-document.addEventListener('DOMContentLoaded', async ()=>{
-  await loadVoicesRobust();
+// pitch/rate/vol
+$('vRate').oninput=e=>{ userRateChanged=true; $('rateVal').textContent=(+e.target.value).toFixed(2); };
+$('vPitch').oninput=e=>{ userPitchChanged=true; $('pitchVal').textContent=(+e.target.value).toFixed(2); };
+$('vVol').oninput=e=>{ $('vVolVal').textContent=(+e.target.value).toFixed(2); };
+
+/* ===================== immediate paint (no waiting) ===================== */
+document.addEventListener('DOMContentLoaded', ()=>{
+  populateMenusFast();
+  applyVoiceDefaults();
   $('voiceStatus').textContent='Ready';
 });
+$('refreshVoices').onclick=()=>populateMenusFast();
+$('testVoice').onclick=async()=>{ if(!VOICE) populateMenusFast(); await speak('Voice check. Example: C three is north east of H seven.'); };
 </script>
 </body>
 </html>
