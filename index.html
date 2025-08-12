@@ -52,7 +52,7 @@ select{ min-height:38px }
         <select id="regionSelect"></select>
         <label>Voice</label>
         <select id="voice"></select>
-        <div class="mut" id="voiceHint" style="margin-top:6px;">Menus fill instantly; they’ll auto-update if the system exposes more voices.</div>
+        <div class="mut" id="voiceHint" style="margin-top:6px;">Only verified <b>female</b> voices with a valid country code are listed. Non‑compliant voices are removed.</div>
         <label style="margin-top:10px">Rate: <span id="rateVal">0.95</span></label>
         <input id="vRate" type="range" min="0.7" max="1.6" step="0.01" value="0.95">
         <label>Pitch: <span id="pitchVal">1.28</span></label>
@@ -140,7 +140,8 @@ const regionName=lang=> (regionCode(lang)==='AE' ? 'United Arab Emirates'
 const FEMALE_TOKENS=/\b(zira|samantha|karen|moira|tessa|serena|veena|victoria|joanna|jenny|aria|jessa|kimberly|kendra|ivy|nicole|salli|olivia|ella|ava|amy|emma|mia|sophia|isabella|natasha|catherine|allison|chloe|grace|zoe|sarah|sofia|camila|paulina|luciana|monica|anna|tatyana|zhiyu|hazel|helen|riva|luna|maya|noor|nour|layla|leila|hala|mariam|maryam|salma|dana|rania|yasmin|yasmine|amal|reem|farah|fatima|fatma|huda|nada|noura|nura|susan|sonia|sonya|cortana|hannah|lila|lily|kate|grace)\b/i;
 const MALE_NEG=/\b(male|boy|man|alex(?!a)|daniel|david|george|michael|mark|tom|fred|brian|kevin|liam|adam|andy|ben|bruce|charles|chris\b|eric|frank|jack|john|luke|matt|mike|nathan|paul|peter|ryan|steve|tim|james|william|robert|andrew|henry|richard|pablo|ricardo|mateo|rahul|ravi|neil|noah|sam(?!antha))\b/i;
 
-function voicesNow(){ try{ return speechSynthesis.getVoices()||[]; }catch(_){ return []; } }
+function hasCountry(v){ const code=regionCode(v.lang); return !!(code && REGION_NAMES[code]); }
+function voicesNow(){ try{ return speechSynthesis.getVoices()||[]; }catch(_){ return []; } }catch(_){ return []; } }
 function vKey(v){ return v.voiceURI||(v.name+'|'+v.lang); }
 
 function vendorOf(v){ const n=v.name||''; const u=v.voiceURI||''; if(/^Microsoft\b/i.test(n)) return 'Microsoft'; if(/^Google\b/i.test(n)) return 'Google'; if(/com\.apple\./i.test(u)) return 'Apple'; return 'System'; }
@@ -167,13 +168,16 @@ function canonicalName(v){
 }
 
 function isExplicitFemale(v){
-  const n=(v.name+' '+v.voiceURI).toLowerCase();
-  if(/\bfemale\b/.test(n)) return true;
-  if(FEMALE_TOKENS.test(n)) return true;
-  if(MALE_NEG.test(n)) return false;
-  // Apple known female set by name + region
+  const hay=(v.name+' '+v.voiceURI).toLowerCase();
+  if(/female/.test(hay)) return true;
+  if(FEMALE_TOKENS.test(hay)) return true;
+  if(MALE_NEG.test(hay)) return false;
+  const vendor=vendorOf(v);
+  const nameLower=canonicalName(v).toLowerCase();
   const knownAppleFemale=new Set(['samantha','karen','tessa','moira','serena','veena','victoria']);
-  if(/com\.apple\./i.test(v.voiceURI||'') && knownAppleFemale.has((v.name||'').toLowerCase())) return true;
+  const knownMicrosoftFemale=new Set(['zira','aria','jenny','jessa','michelle','ashley','monica','natasha','melissa','nicole','amber','sara','sarah','lisa','beth','jane','linda','ana','emma']);
+  if(vendor==='Apple' && knownAppleFemale.has(nameLower)) return true;
+  if(vendor==='Microsoft' && knownMicrosoftFemale.has(nameLower)) return true;
   return false;
 }
 
@@ -200,10 +204,8 @@ function populateMenusStrict(){
   const voiceSel=$('voice'); const regionSel=$('regionSelect');
   voiceSel.innerHTML=''; regionSel.innerHTML='';
 
-  const raw=voicesNow();
-  const females=raw.filter(isExplicitFemale);
-  const pool = females.length ? females
-    : raw.filter(v => /^en[-_]/i.test(v.lang||'') && !MALE_NEG.test((v.name+' '+v.voiceURI)));
+  const raw=voicesNow(); /* strict filter only */
+  const pool = raw.filter(v => isExplicitFemale(v) && hasCountry(v));
 
   // Build regions only where female voices exist
   const groups=new Map();
@@ -352,8 +354,8 @@ $('start').onclick = async ()=>{
   if(!VOICE){
     await hydrateVoicesAndPopulate();
     const rawPool=voicesNow();
-    let pool=rawPool.filter(isExplicitFemale);
-    if(!pool.length){ pool = rawPool.filter(v => /^en[-_]/i.test(v.lang||'') && !MALE_NEG.test((v.name+' '+v.voiceURI))); }
+    let pool=rawPool.filter(v => isExplicitFemale(v) && hasCountry(v));
+    
     const best=chooseBestVoice(pool);
     if(best){ VOICE=best; try{localStorage.setItem(LAST_KEY,vKey(best));}catch(_){}}
   }
