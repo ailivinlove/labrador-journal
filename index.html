@@ -39,20 +39,22 @@ select{ min-height:38px }
         <label>Trials per block: <span id="tVal">40</span></label>
         <input id="trials" type="range" min="10" max="5000" step="5" value="40">
         <label>Pause between relations in the same premise (seconds): <span id="pVal">1.0 s</span></label>
-        <input id="pauseTime" type="range" min="0" max="60" step="0.5" value="1">
+        <input id="pauseTime" type="range" min="0" max="60" step="0.1" value="1">
+        <label>Pause between premises (seconds): <span id="premiseIntervalVal">1.0 s</span></label>
+        <input id="premiseInterval" type="range" min="0" max="60" step="0.1" value="1">
         <label>Target match rate: <span id="rVal">25%</span></label>
         <input id="rate" type="range" min="0" max="100" step="1" value="25">
         <hr style="border:none;border-top:1px solid rgba(0,200,255,.25);margin:8px 0">
         <div class="title">Relational Complexity</div>
         <label>Symbols per premise: <span id="symVal">3</span></label>
-        <input id="symbols" type="range" min="3" max="6" value="3">
+        <input id="symbols" type="range" min="3" max="15" value="3">
         <label>Relations per premise: <span id="relCountVal">2</span></label>
-        <input id="relCount" type="range" min="2" max="5" value="2">
+        <input id="relCount" type="range" min="2" max="15" value="2">
         <label>Composition count (base relations per relation): <span id="compVal">1</span></label>
-        <input id="compCount" type="range" min="1" max="3" value="1">
+        <input id="compCount" type="range" min="1" max="15" value="1">
         <div class="checkwrap"><input id="scramble" type="checkbox"> <label for="scramble">Scramble clause order</label></div>
         <div class="checkwrap"><input id="condMode" type="checkbox"> <label for="condMode">Conditional mode</label></div>
-        <div class="mut"><b>N-match rule:</b> Premise i matches i−N iff <b>all symbols from i−N reappear in i</b> and the <b>union</b> of their relations is <b>consistent</b> (no contradictions). Extra symbols allowed. Compass and level magnitudes are fixed.</div>
+        <div class="mut"><b>N-match rule:</b> Premise i matches i−N iff <b>all symbols from i−N reappear in i</b> and the <b>union</b> of their relations is <b>consistent</b> (no contradictions). Extra symbols allowed. Compass and level magnitudes are fixed.</div>
       </div>
     </div>
 
@@ -63,7 +65,7 @@ select{ min-height:38px }
         <select id="regionSelect"></select>
         <label>Voice</label>
         <select id="voice"></select>
-        <div class="mut" id="voiceHint" style="margin-top:6px;">Menus fill instantly; they’ll auto-update if the system exposes more voices.</div>
+        <div class="mut" id="voiceHint" style="margin-top:6px;">Menus fill instantly; they’ll auto‑update if the system exposes more voices.</div>
         <label style="margin-top:10px">Rate: <span id="rateVal">0.95</span></label>
         <input id="vRate" type="range" min="0.7" max="1.6" step="0.01" value="0.95">
         <label>Pitch: <span id="pitchVal">1.28</span></label>
@@ -84,7 +86,6 @@ select{ min-height:38px }
           <button id="start" class="btn">▶ Start</button>
           <button id="pause" class="btn" disabled>⏸ Pause</button>
           <button id="reset" class="btn" disabled>🔄 Reset</button>
-          <!-- Use spacebar for match input instead of M, to align with user preference for hands-free control -->
           <button id="hit" class="btn" disabled>✓ Match (<span class="kbd">Space</span>)</button>
           <button id="skip" class="btn" disabled>⏭ Skip</button>
         </div>
@@ -103,12 +104,12 @@ select{ min-height:38px }
 </div>
 
 <script>
-/* ===================== helpers ===================== */
+/* Helpers */
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 
-/* ===================== directions ===================== */
+/* Directions */
 const DIRS = {
   north:{x:0,y:-1}, south:{x:0,y:1}, east:{x:1,y:0}, west:{x:-1,y:0},
   northeast:{x:1,y:-1}, northwest:{x:-1,y:-1}, southeast:{x:1,y:1}, southwest:{x:-1,y:1}
@@ -116,18 +117,17 @@ const DIRS = {
 const HORIZ = Object.keys(DIRS);
 const LEVELS = [1,2,3];
 
-/* ===================== global complexity variables ===================== */
+/* Complexity variables */
 let NUM_SYMBOLS = 3;
 let REL_COUNT = 2;
 let COMP_COUNT = 1;
 let SCRAMBLE = false;
 let COND_MODE = false;
 
-/* ===================== ultra-fast voice loader ===================== */
+/* Voice loader state */
 let VOICE=null;
 let userRateChanged=false, userPitchChanged=false;
 const LAST_KEY='rnback_last_voice_v1';
-
 const REGION_NAMES={ AE:'United Arab Emirates', AU:'Australia', GB:'United Kingdom', UK:'United Kingdom',
   US:'United States', CA:'Canada', NZ:'New Zealand', IE:'Ireland', IN:'India', ZA:'South Africa',
   PH:'Philippines', SG:'Singapore', HK:'Hong Kong', NG:'Nigeria'
@@ -135,10 +135,8 @@ const REGION_NAMES={ AE:'United Arab Emirates', AU:'Australia', GB:'United Kingd
 const regionCode=lang=>(String(lang).match(/^[a-z]{2,3}[-_]?([A-Z]{2})/)||[])[1]||'';
 const regionName=lang=> (regionCode(lang)==='AE' ? 'United Arab Emirates'
                          : REGION_NAMES[regionCode(lang)] || (/^en\b/i.test(lang)?'Global English':'Other Region'));
-
 const MALE_NEG=/\b(male|boy|man|daniel|david|george|michael|mark|tom|fred|brian|kevin|liam|adam|andy|ben|bruce|charles|chris|eric|frank|jack|john|luke|matt|mike|nathan|paul|peter|ryan|steve|tim|alex(?!a)|james|william|robert|andrew|henry|richard|pablo|ricardo|mateo)\b/i;
 const FEMALE_TOKENS=/\b(zira|samantha|karen|moira|tessa|serena|veena|victoria|joanna|jenny|aria|jessa|kimberly|kendra|ivy|nicole|salli|olivia|ella|ava|amy|emma|mia|sophia|isabella|natasha|catherine|allison|chloe|grace|zoe|sarah|sofia|camila|paulina|luciana|monica|anna|tatyana|zhiyu|hazel|helen|riva|luna|maya|noor|nour|layla|leila|hala|mariam|maryam|salma|dana|rania|yasmin|yasmine|amal|reem|farah|fatima|fatma|huda|nada|noura|nura)\b/i;
-
 function voicesNow(){ try{ return speechSynthesis.getVoices()||[]; }catch(_){ return []; } }
 function vKey(v){ return v.voiceURI||(v.name+'|'+v.lang); }
 function labelForVoice(v){
@@ -180,7 +178,11 @@ function chooseBestVoice(list){
 function populateMenusFast() {
   const regionsOrder=['Australia','United Kingdom','United States','United Arab Emirates','Canada','Ireland','New Zealand','South Africa','Global English','Other Region'];
   const regionSel=$('regionSelect'); regionSel.innerHTML='';
-  regionsOrder.forEach(r=>{ const o=document.createElement('option'); o.value=r; o.textContent=r; regionSel.appendChild(o); });
+  regionsOrder.forEach(r=>{
+    const o=document.createElement('option');
+    o.value=r; o.textContent=r;
+    regionSel.appendChild(o);
+  });
   regionSel.value='Australia';
 
   const voiceSel=$('voice'); voiceSel.innerHTML='';
@@ -190,51 +192,75 @@ function populateMenusFast() {
     return FEMALE_TOKENS.test(n) || (!MALE_NEG.test(n) && /\bfemale\b/.test(n));
   });
   const use = list.length? list : raw;
-  const inRegion = (r)=>use.filter(v=>regionName(v.lang)===r);
+  const inRegion = r=>use.filter(v=>regionName(v.lang)===r);
 
   function fillVoicesFor(region){
     voiceSel.innerHTML='';
     const pack=inRegion(region);
     (pack.length?pack:use).forEach(v=>{
       const o=document.createElement('option');
-      o.value=vKey(v); o.textContent=labelForVoice(v);
+      o.value=vKey(v);
+      o.textContent=labelForVoice(v);
       o.title=`${v.name} — ${regionName(v.lang)} — ${v.lang}`;
       voiceSel.appendChild(o);
     });
     const best=chooseBestVoice(use);
-    if(best){ VOICE=best; voiceSel.value=vKey(best); try{localStorage.setItem(LAST_KEY,vKey(best));}catch(_){ } }
+    if(best){
+      VOICE=best;
+      voiceSel.value=vKey(best);
+      try{ localStorage.setItem(LAST_KEY,vKey(best)); }catch(_){}
+    }
   }
   fillVoicesFor(regionSel.value);
-
   regionSel.onchange=()=>fillVoicesFor(regionSel.value);
-  voiceSel.onchange=()=>{ const key=voiceSel.value; const found=voicesNow().find(v=>vKey(v)===key); if(found){ VOICE=found; try{localStorage.setItem(LAST_KEY,vKey(found));}catch(_){}} };
+  voiceSel.onchange=()=>{
+    const key=voiceSel.value;
+    const found=voicesNow().find(v=>vKey(v)===key);
+    if(found){
+      VOICE=found;
+      try{ localStorage.setItem(LAST_KEY,vKey(found)); }catch(_){}
+    }
+  };
   if('speechSynthesis' in window){
     speechSynthesis.onvoiceschanged = ()=>{ populateMenusFast(); };
   }
 }
 function applyVoiceDefaults(){
-  if(!userRateChanged){ $('vRate').value=0.95; $('rateVal').textContent='0.95'; }
-  if(!userPitchChanged){ $('vPitch').value=1.28; $('pitchVal').textContent='1.28'; }
+  if(!userRateChanged){
+    $('vRate').value=0.95;
+    $('rateVal').textContent='0.95';
+  }
+  if(!userPitchChanged){
+    $('vPitch').value=1.28;
+    $('pitchVal').textContent='1.28';
+  }
 }
-
-/* Speaking — instant, with quick fallback */
 async function speak(text){
   if(!('speechSynthesis' in window)){ return; }
   const u=new SpeechSynthesisUtterance(text);
   if(VOICE) u.voice=VOICE;
   u.lang=(VOICE&&VOICE.lang) ? VOICE.lang : 'en-AU';
-  u.rate=+$('vRate').value; u.pitch=+$('vPitch').value; u.volume=+$('vVol').value;
+  u.rate=+$('vRate').value;
+  u.pitch=+$('vPitch').value;
+  u.volume=+$('vVol').value;
   return new Promise(res=>{
-    let settled=false; const done=()=>{ if(!settled){ settled=true; res(); } };
+    let settled=false;
+    const done=()=>{ if(!settled){ settled=true; res(); } };
     u.onend=done;
     u.onerror=()=>{
       const pool=voicesNow();
       const alt = pool.find(v=>vKey(v)!== (VOICE? vKey(VOICE):'')) || null;
       if(alt){
-        VOICE=alt; try{localStorage.setItem(LAST_KEY,vKey(alt));}catch(_){}
+        VOICE=alt;
+        try{ localStorage.setItem(LAST_KEY,vKey(alt)); }catch(_){}
         const u2=new SpeechSynthesisUtterance(text);
-        u2.voice=VOICE; u2.lang=VOICE.lang; u2.rate=u.rate; u2.pitch=u.pitch; u2.volume=u.volume;
-        u2.onend=done; u2.onerror=done;
+        u2.voice=VOICE;
+        u2.lang=VOICE.lang;
+        u2.rate=u.rate;
+        u2.pitch=u.pitch;
+        u2.volume=u.volume;
+        u2.onend=done;
+        u2.onerror=done;
         try{ speechSynthesis.speak(u2); }catch(_){ done(); }
       } else { done(); }
     };
@@ -246,15 +272,9 @@ async function speak(text){
   });
 }
 
-/* ===================== parsing & utilities ===================== */
-const LETTERS='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-const token=()=> LETTERS[Math.floor(Math.random()*26)] + (1+Math.floor(Math.random()*9));
-function uniqueTokens(k){ const s=new Set(); while(s.size<k) s.add(token()); return [...s]; }
-
-// Convert multi-part relation vectors into descriptive phrases
+/* Relation helpers */
 function relationToString(rel){
   const parts=[];
-  // horizontal/vertical combinations
   let dx=rel.x, dy=rel.y;
   if(dx!==0 || dy!==0){
     let dirWord='';
@@ -262,9 +282,6 @@ function relationToString(rel){
     if(dy>0) dirWord+='south';
     if(dx>0) dirWord+=dirWord? ' east':'east';
     if(dx<0) dirWord+=dirWord? ' west':'west';
-    if(dx!==0 && dy!==0){
-      // diagonal already descriptive
-    }
     parts.push(dirWord.trim());
   }
   if(rel.z){
@@ -274,15 +291,62 @@ function relationToString(rel){
   }
   return parts.join(' and ');
 }
-
-// Parse a composite relation string into vector
+function randomCompositeRel(){
+  let rel={x:0,y:0,z:0};
+  const n=1 + Math.floor(Math.random()*COMP_COUNT);
+  for(let i=0;i<n;i++){
+    if(Math.random()<0.5){
+      const d = DIRS[HORIZ[Math.floor(Math.random()*HORIZ.length)]];
+      rel.x+=d.x; rel.y+=d.y;
+    } else {
+      const nLev=LEVELS[Math.floor(Math.random()*LEVELS.length)];
+      const up=Math.random()<0.5;
+      rel.z += up? nLev : -nLev;
+    }
+  }
+  return rel;
+}
+function clauseString(from, rel, to){ return `${from} is ${relationToString(rel)} of ${to}`; }
+function token(){
+  const letters='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  return letters[Math.floor(Math.random()*26)] + (1+Math.floor(Math.random()*9));
+}
+function uniqueTokens(k){
+  const s=new Set();
+  while(s.size<k) s.add(token());
+  return [...s];
+}
+function randomPremise(){
+  if(COND_MODE){
+    const toks=uniqueTokens(5);
+    const r1=randomCompositeRel();
+    const r2=randomCompositeRel();
+    const r3=randomCompositeRel();
+    const clause1=clauseString(toks[0],r1,toks[1]);
+    const clause2=clauseString(toks[2],r2,toks[3]);
+    const clause3=clauseString(toks[3],r3,toks[4]);
+    return `If ${clause1} and ${clause2} then ${clause3}`;
+  }
+  const tokens=uniqueTokens(NUM_SYMBOLS);
+  const clauses=[];
+  let attempts=0;
+  for(let i=0;i<REL_COUNT;i++){
+    let u,v;
+    do{
+      u=tokens[Math.floor(Math.random()*tokens.length)];
+      v=tokens[Math.floor(Math.random()*tokens.length)];
+    }while(u===v && attempts++<10);
+    clauses.push(clauseString(u, randomCompositeRel(), v));
+  }
+  if(SCRAMBLE) shuffle(clauses);
+  return clauses.join(' and ');
+}
 function parseRelationWords(str){
   str=str.trim().toLowerCase();
   let vec={x:0,y:0,z:0};
   const parts=str.split(/\s+and\s+/);
   parts.forEach(part=>{
     part=part.trim();
-    // vertical
     let m=part.match(/^(one|two|three|\d+)\s+levels?\s+(above|below)$/);
     if(m){
       const n=m[1];
@@ -290,9 +354,7 @@ function parseRelationWords(str){
       vec.z += m[2]==='above'? k : -k;
       return;
     }
-    // horizontal/diagonal
     if(part){
-      // treat spaces; e.g. 'north east'
       part=part.replace(/\s+/g,'');
       const d=DIRS[part];
       if(d){ vec.x+=d.x; vec.y+=d.y; return; }
@@ -300,169 +362,112 @@ function parseRelationWords(str){
   });
   return vec;
 }
-
 function parsePremise(sentence){
-  let s = String(sentence).trim();
-  // remove conditional markers
-  s = s.replace(/^if\s+/i,'');
-  s = s.replace(/\bthen\b/gi,'and');
+  let s=String(sentence).trim();
+  s=s.replace(/^if\s+/i,'');
+  s=s.replace(/\bthen\b/gi,'and');
   const parts=s.split(/\s+and\s+/i).map(p=>p.trim()).filter(Boolean);
   const edges=[]; const nodes=new Set();
-  for(const part of parts){
-    // match A\d+ is <relation phrase> of? B\d+
+  parts.forEach(part=>{
     const m=part.match(/^([A-Z]\d+)\s+is\s+(.+?)\s+of\s+([A-Z]\d+)$/i);
     if(m){
       const u=m[1], relWords=m[2], v=m[3];
-      const vec=parseRelationWords(relWords);
-      edges.push({u,v,rel:vec});
+      edges.push({u,v,rel:parseRelationWords(relWords)});
       nodes.add(u); nodes.add(v);
     }
-  }
+  });
   return {nodes:[...nodes], edges};
 }
-
-function invertRel(r){ return {x:-r.x, y:-r.y, z:-r.z}; }
+function invertRel(r){ return {x:-r.x,y:-r.y,z:-r.z}; }
 function vecAdd(a,b){ return {x:a.x+b.x, y:a.y+b.y, z:a.z+b.z}; }
-
-/* ===================== coordinate closure on arbitrary edges ===================== */
 function closureFromEdges(edges){
-  const adj = new Map(), nodes = new Set();
-  function push(u,v,rel){ if(!adj.has(u)) adj.set(u,[]); adj.get(u).push({v,rel}); nodes.add(u); nodes.add(v); }
-  for(const e of edges){ push(e.u,e.v,e.rel); push(e.v,e.u,invertRel(e.rel)); }
-
-  const coords = new Map(); let ok = true;
-  for(const start of nodes){
-    if(coords.has(start)) continue;
+  const adj=new Map(), nodes=new Set();
+  function push(u,v,rel){
+    if(!adj.has(u)) adj.set(u,[]);
+    adj.get(u).push({v,rel});
+    nodes.add(u); nodes.add(v);
+  }
+  edges.forEach(e=>{
+    push(e.u,e.v,e.rel);
+    push(e.v,e.u,invertRel(e.rel));
+  });
+  const coords=new Map(); let ok=true;
+  nodes.forEach(start=>{
+    if(coords.has(start)) return;
     coords.set(start,{x:0,y:0,z:0});
     const stack=[start];
     while(stack.length){
-      const u = stack.pop(), pu = coords.get(u);
-      for(const {v,rel} of (adj.get(u)||[])){
-        const want = vecAdd(pu, rel);
-        if(!coords.has(v)){ coords.set(v, want); stack.push(v); }
-        else {
-          const pv = coords.get(v);
+      const u=stack.pop(), pu=coords.get(u);
+      (adj.get(u)||[]).forEach(({v,rel})=>{
+        const want=vecAdd(pu,rel);
+        if(!coords.has(v)){
+          coords.set(v,want);
+          stack.push(v);
+        } else {
+          const pv=coords.get(v);
           if(pv.x!==want.x || pv.y!==want.y || pv.z!==want.z) ok=false;
         }
-      }
+      });
     }
-  }
-  return { ok, nodes:[...nodes], coords };
+  });
+  return {ok,nodes:[...nodes],coords};
 }
-
-/* ===================== RELATIVE-COMPATIBILITY MATCH ===================== */
-/* Premise B matches A iff:
-   (1) every symbol in A also appears in B (anchors persist), and
-   (2) the union of A's and B's relations has no contradictions (is satisfiable). */
 function sentencesRelMatch(a,b){
-  const A = parsePremise(a), B = parsePremise(b);
+  const A=parsePremise(a), B=parsePremise(b);
   for(const s of A.nodes){ if(!B.nodes.includes(s)) return false; }
-  const merged = closureFromEdges([...A.edges, ...B.edges]);
+  const merged=closureFromEdges([...A.edges,...B.edges]);
   return merged.ok;
 }
-
-/* ===================== builders ===================== */
-// Compose multiple base relations into a single vector
-function randomCompositeRel(){
-  let rel={x:0,y:0,z:0};
-  const n=1 + Math.floor(Math.random()*COMP_COUNT);
-  for(let i=0;i<n;i++){
-    if(Math.random()<0.5){
-      // horizontal/diagonal
-      const d = DIRS[HORIZ[Math.floor(Math.random()*HORIZ.length)]];
-      rel.x+=d.x; rel.y+=d.y;
-    } else {
-      // vertical
-      const nLev = LEVELS[Math.floor(Math.random()*LEVELS.length)];
-      const up = Math.random()<0.5;
-      rel.z += up? nLev : -nLev;
-    }
-  }
-  return rel;
-}
-
-function clauseString(from, rel, to){
-  const phrase = relationToString(rel);
-  return `${from} is ${phrase} of ${to}`;
-}
-
-function randomPremise(){
-  if(COND_MODE){
-    // generate a conditional statement with two antecedent relations and one consequent relation
-    // pick 5 unique tokens
-    const toks=uniqueTokens(5);
-    const r1=randomCompositeRel();
-    const r2=randomCompositeRel();
-    const r3=randomCompositeRel();
-    const clause1=clauseString(toks[0], r1, toks[1]);
-    const clause2=clauseString(toks[2], r2, toks[3]);
-    // consequent uses last two tokens
-    const clause3=clauseString(toks[3], r3, toks[4]);
-    const antecedent = `${clause1} and ${clause2}`;
-    const s = `If ${antecedent} then ${clause3}`;
-    return s;
-  }
-  // generate chain of REL_COUNT relations among NUM_SYMBOLS tokens (NUM_SYMBOLS = REL_COUNT+1 by slider design)
-  const tokens=uniqueTokens(NUM_SYMBOLS);
-  const clauses=[];
-  for(let i=0;i<REL_COUNT;i++){
-    const rel=randomCompositeRel();
-    clauses.push(clauseString(tokens[i], rel, tokens[i+1]));
-  }
-  if(SCRAMBLE){ shuffle(clauses); }
-  return clauses.join(' and ');
-}
-
-/* Guaranteed matching premise: reuse all prior symbols, keep constraints (possibly reorder/flip clauses) */
 function buildMatching(prev){
-  const P = parsePremise(prev);
+  const P=parsePremise(prev);
   if(!P.edges.length) return prev;
-  // preserve all symbols
-  const parts = P.edges.map(e=>{
-    const flip = Math.random()<0.5;
-    const u = flip ? e.v : e.u;
-    const v = flip ? e.u : e.v;
-    const rel = flip ? invertRel(e.rel) : e.rel;
-    return clauseString(u, rel, v);
+  const parts=P.edges.map(e=>{
+    const flip=Math.random()<0.5;
+    const u=flip?e.v:e.u;
+    const v=flip?e.u:e.v;
+    const rel=flip?invertRel(e.rel):e.rel;
+    return clauseString(u,rel,v);
   });
-  if(parts.length>1 && SCRAMBLE){ shuffle(parts); }
+  if(parts.length>1 && SCRAMBLE) shuffle(parts);
   return parts.join(' and ');
 }
-
-/* Guaranteed non-match for previous: use fresh labels so anchors don't persist. */
 function buildNonMatching(prev){
-  const prevNodes = new Set(parsePremise(prev).nodes);
-  function freshToken(){ let t; do{ t = token(); }while(prevNodes.has(t)); prevNodes.add(t); return t; }
-  const tokens=[];
-  // generate the same number of symbols as NUM_SYMBOLS
-  for(let i=0;i<NUM_SYMBOLS;i++){ tokens.push(freshToken()); }
-  const clauses=[];
-  for(let i=0;i<REL_COUNT;i++){
-    const rel=randomCompositeRel();
-    clauses.push(clauseString(tokens[i], rel, tokens[i+1]));
+  const prevNodes=new Set(parsePremise(prev).nodes);
+  function freshToken(){
+    let t;
+    do{ t=token(); }while(prevNodes.has(t));
+    prevNodes.add(t);
+    return t;
   }
-  if(SCRAMBLE){ shuffle(clauses); }
+  const tokens=[]; for(let i=0;i<NUM_SYMBOLS;i++) tokens.push(freshToken());
+  const clauses=[];
+  let attempts=0;
+  for(let i=0;i<REL_COUNT;i++){
+    let u,v;
+    do{
+      u=tokens[Math.floor(Math.random()*tokens.length)];
+      v=tokens[Math.floor(Math.random()*tokens.length)];
+    }while(u===v && attempts++<10);
+    clauses.push(clauseString(u, randomCompositeRel(), v));
+  }
+  if(SCRAMBLE) shuffle(clauses);
   return clauses.join(' and ');
 }
-
-/* ===================== TTS verbalization ===================== */
 function sayToken(tok){
-  const m=tok.match(/^([A-Z])(\d+)$/); if(!m) return tok;
+  const m=tok.match(/^([A-Z])(\d+)$/);
+  if(!m) return tok;
   const digits={'0':'zero','1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine'};
   return `${m[1]} ${m[2].split('').map(d=>digits[d]||d).join(' ')}`;
 }
 function verbalizeClause(clause){
-  // convert tokens but leave relation words
-  return clause.replace(/([A-Z])(\d+)/g, (m,letter,digits)=>{
+  return clause.replace(/([A-Z])(\d+)/g,(m,letter,digits)=>{
     return `${letter} ${digits.split('').map(d=>({'0':'zero','1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine'}[d]||d)).join(' ')}`;
   });
 }
 function verbalizeSentence(s){
-  // handle conditional markers separately
   if(/^if\b/i.test(s)){
-    // separate into antecedent and consequent
     let withoutIf=s.replace(/^if\s+/i,'');
-    const [antecedent, consequent] = withoutIf.split(/\s+then\s+/i);
+    const [antecedent,consequent] = withoutIf.split(/\s+then\s+/i);
     const antecedentClauses=antecedent.split(/\s+and\s+/i).map(p=>verbalizeClause(p.trim()));
     const consequentClause=verbalizeClause(consequent.trim());
     return [ ...antecedentClauses.map(c=>c), `Then ${consequentClause}` ];
@@ -471,15 +476,14 @@ function verbalizeSentence(s){
   return parts.map(p=>verbalizeClause(p));
 }
 
-/* ===================== gameplay ===================== */
-let N=1, MAX=40, PAUSE_SEC=1.0, RATE=25;
+/* Timing variables */
+let N=1, MAX=40, PAUSE_SEC=1.0, PREMISE_INTERVAL_SEC=1.0, RATE=25;
 let idx=0, running=false, paused=false;
 let waitTimer=null;
 const history=[], planned=[];
 let correct=0, errors=0;
 let spokenParts=null, clauseIdx=0;
 
-/* Plan an exact match count to honor the target rate precisely. */
 function planSequence(){
   planned.length=0;
   for(let i=0;i<MAX;i++) planned.push(false);
@@ -488,20 +492,29 @@ function planSequence(){
   shuffle(eligible);
   for(let i=0;i<k;i++) planned[eligible[i]]=true;
 }
-
 function isActualMatch(i){ return i>=N && sentencesRelMatch(history[i-N], history[i]); }
-
 function buildPremiseVisual(raw){
   const parts=raw.split(/\s+and\s+/i).map(p=>p.trim());
   const el=$('premiseText'); el.innerHTML='';
   parts.forEach((part,i)=>{
-    const sp=document.createElement('span'); sp.className='rel'; sp.textContent=part; el.appendChild(sp);
-    if(i<parts.length-1){ const sep=document.createElement('span'); sep.className='sep'; sep.textContent=' and '; el.appendChild(sep); }
+    const sp=document.createElement('span');
+    sp.className='rel';
+    sp.textContent=part;
+    el.appendChild(sp);
+    if(i<parts.length-1){
+      const sep=document.createElement('span');
+      sep.className='sep';
+      sep.textContent=' and ';
+      el.appendChild(sep);
+    }
   });
   return parts;
 }
-function setActivePart(i){ [...$('premiseText').querySelectorAll('.rel')].forEach((n,idx)=>n.classList.toggle('active', idx===i)); }
-
+function setActivePart(i){
+  [...$('premiseText').querySelectorAll('.rel')].forEach((n,idx)=>{
+    n.classList.toggle('active', idx===i);
+  });
+}
 async function speakPremise(){
   if(!spokenParts) return;
   for(; running && !paused && clauseIdx<spokenParts.length; clauseIdx++){
@@ -509,16 +522,25 @@ async function speakPremise(){
     await speak(spokenParts[clauseIdx]+'.');
     if(!running || paused) return;
     if(clauseIdx<spokenParts.length-1){
-      await new Promise(res=>{ waitTimer=setTimeout(()=>{waitTimer=null; res(); }, PAUSE_SEC*1000); });
+      await new Promise(res=>{
+        waitTimer=setTimeout(()=>{
+          waitTimer=null;
+          res();
+        }, PAUSE_SEC*1000);
+      });
       if(!running || paused) return;
     }
   }
   setActivePart(-1);
   if(running && !paused){
-    await new Promise(res=>{ waitTimer=setTimeout(()=>{waitTimer=null; res(); }, PAUSE_SEC*1000); });
+    await new Promise(res=>{
+      waitTimer=setTimeout(()=>{
+        waitTimer=null;
+        res();
+      }, PREMISE_INTERVAL_SEC*1000);
+    });
   }
 }
-
 function nextPremiseString(){
   if(idx>=N){
     if(planned[idx]) return buildMatching(history[idx-N]);
@@ -526,10 +548,12 @@ function nextPremiseString(){
   }
   return randomPremise();
 }
-
 async function runTrial(){
   if(!running || paused) return;
-  if(idx>=MAX){ stop(); return; }
+  if(idx>=MAX){
+    stop();
+    return;
+  }
   const s=nextPremiseString();
   history[idx]=s;
   buildPremiseVisual(s);
@@ -537,59 +561,113 @@ async function runTrial(){
   clauseIdx=0;
   await speakPremise();
   if(!running || paused) return;
-  idx++; updateUI(); runTrial();
+  idx++;
+  updateUI();
+  runTrial();
 }
-
-/* ===================== controls ===================== */
 function start(){
   if(running) return;
-  running=true; paused=false; try{speechSynthesis.cancel();}catch(_){}
-  planSequence(); idx=0; correct=0; errors=0; updateUI();
-  $('pause').disabled=false; $('reset').disabled=false; $('hit').disabled=false; $('skip').disabled=false;
+  running=true;
+  paused=false;
+  try{ speechSynthesis.cancel(); }catch(_){}
+  planSequence();
+  idx=0;
+  correct=0;
+  errors=0;
+  updateUI();
+  $('pause').disabled=false;
+  $('reset').disabled=false;
+  $('hit').disabled=false;
+  $('skip').disabled=false;
   runTrial();
 }
 function stop(){
-  running=false; paused=false;
-  clearTimeout(waitTimer); waitTimer=null;
-  spokenParts=null; clauseIdx=0;
+  running=false;
+  paused=false;
+  clearTimeout(waitTimer);
+  waitTimer=null;
+  spokenParts=null;
+  clauseIdx=0;
   try{ speechSynthesis.cancel(); }catch(_){}
-  $('pause').disabled=true; $('skip').disabled=true;
+  $('pause').disabled=true;
+  $('skip').disabled=true;
 }
 function togglePause(){
   if(!running && !paused) return;
   if(!paused){
-    paused=true; clearTimeout(waitTimer); waitTimer=null; try{speechSynthesis.cancel();}catch(_){}
+    paused=true;
+    clearTimeout(waitTimer);
+    waitTimer=null;
+    try{ speechSynthesis.cancel(); }catch(_){}
     $('pause').textContent='▶ Resume';
   } else {
-    paused=false; $('pause').textContent='⏸ Pause';
+    paused=false;
+    $('pause').textContent='⏸ Pause';
     if(spokenParts && clauseIdx<spokenParts.length){
-      speakPremise().then(()=>{ if(running && !paused){ idx++; updateUI(); runTrial(); } });
+      speakPremise().then(()=>{
+        if(running && !paused){
+          idx++;
+          updateUI();
+          runTrial();
+        }
+      });
     } else {
-      idx++; updateUI(); runTrial();
+      idx++;
+      updateUI();
+      runTrial();
     }
   }
 }
 function reset(){
-  stop(); $('start').disabled=false; $('pause').textContent='⏸ Pause';
-  idx=0; correct=0; errors=0; $('premiseText').textContent='—'; updateUI();
+  stop();
+  $('start').disabled=false;
+  $('pause').textContent='⏸ Pause';
+  idx=0;
+  correct=0;
+  errors=0;
+  $('premiseText').textContent='—';
+  updateUI();
 }
-function registerHit(){ if(!running) return; if(isActualMatch(idx)) correct++; else errors++; updateUI(); }
-function skip(){ if(!running) return; clearTimeout(waitTimer); try{speechSynthesis.cancel();}catch(_){}
-  idx++; updateUI(); runTrial(); }
+function registerHit(){
+  if(!running) return;
+  if(isActualMatch(idx)) correct++;
+  else errors++;
+  updateUI();
+}
+function skip(){
+  if(!running) return;
+  clearTimeout(waitTimer);
+  try{ speechSynthesis.cancel(); }catch(_){}
+  idx++;
+  updateUI();
+  runTrial();
+}
 function updateUI(){
-  $('idx').textContent=idx; $('max').textContent=MAX;
+  $('idx').textContent=idx;
+  $('max').textContent=MAX;
   $('ptype').textContent = planned[idx] && idx>=N ? 'planned MATCH' : 'planned NON-match';
   $('isMatch').textContent = idx>=N ? String(isActualMatch(idx)).toUpperCase() : '—';
-  $('corr').textContent=correct; $('err').textContent=errors;
-  $('nVal').textContent=N; $('tVal').textContent=MAX; $('pVal').textContent=PAUSE_SEC.toFixed(1)+' s'; $('rVal').textContent=RATE+'%';
-  $('symVal').textContent=NUM_SYMBOLS; $('relCountVal').textContent=REL_COUNT; $('compVal').textContent=COMP_COUNT;
+  $('corr').textContent=correct;
+  $('err').textContent=errors;
+  $('nVal').textContent = N;
+  $('tVal').textContent = MAX;
+  $('pVal').textContent = PAUSE_SEC.toFixed(1) + ' s';
+  $('premiseIntervalVal').textContent = PREMISE_INTERVAL_SEC.toFixed(1) + ' s';
+  $('rVal').textContent = RATE + '%';
+  $('symVal').textContent = NUM_SYMBOLS;
+  $('relCountVal').textContent = REL_COUNT;
+  $('compVal').textContent = COMP_COUNT;
 }
 
-/* ===================== bindings ===================== */
-$('start').onclick = async ()=>{
+/* Bind controls */
+$('start').onclick = async()=>{
   if(!VOICE){
     populateMenusFast();
-    const raw=voicesNow(); if(raw.length){ VOICE=chooseBestVoice(raw); try{localStorage.setItem(LAST_KEY,vKey(VOICE));}catch(_){ } }
+    const raw=voicesNow();
+    if(raw.length){
+      VOICE=chooseBestVoice(raw);
+      try{ localStorage.setItem(LAST_KEY,vKey(VOICE)); }catch(_){}
+    }
   }
   await speak('Ready.');
   start();
@@ -598,58 +676,74 @@ $('pause').onclick=togglePause;
 $('reset').onclick=reset;
 $('hit').onclick=registerHit;
 $('skip').onclick=skip;
-// Bind the spacebar to register a match response. The spacebar is chosen for
-// its intuitive accessibility during hands‑free training. Different browsers
-// may report the key as " " (space) or "Space"; handle both.
 window.addEventListener('keydown', e=>{
-  // ignore key presses when not running
   if(!running) return;
-  const key = e.key;
-  if(key === ' ' || key === 'Space' || key === 'Spacebar'){
+  const key=e.key;
+  if(key===' ' || key==='Space' || key==='Spacebar'){
     registerHit();
-    // Prevent default scrolling behaviour when pressing spacebar
     e.preventDefault();
   }
 });
-
-// sliders
-$('n').oninput=e=>{ N=+e.target.value; $('nVal').textContent=N; };
-$('trials').oninput=e=>{ MAX=+e.target.value; $('tVal').textContent=MAX; $('max').textContent=MAX; };
-$('pauseTime').oninput=e=>{ PAUSE_SEC=+e.target.value; $('pVal').textContent=PAUSE_SEC.toFixed(1)+' s'; };
-$('rate').oninput=e=>{ RATE=+e.target.value; $('rVal').textContent=RATE+'%'; };
-
-// complexity sliders
+$('n').oninput=e=>{
+  N=+e.target.value;
+  $('nVal').textContent=N;
+};
+$('trials').oninput=e=>{
+  MAX=+e.target.value;
+  $('tVal').textContent=MAX;
+  $('max').textContent=MAX;
+};
+$('pauseTime').oninput=e=>{
+  PAUSE_SEC=+e.target.value;
+  $('pVal').textContent=PAUSE_SEC.toFixed(1)+' s';
+};
+$('rate').oninput=e=>{
+  RATE=+e.target.value;
+  $('rVal').textContent=RATE+'%';
+};
+$('premiseInterval').oninput = e => {
+  PREMISE_INTERVAL_SEC = +e.target.value;
+  $('premiseIntervalVal').textContent = PREMISE_INTERVAL_SEC.toFixed(1) + ' s';
+};
 $('symbols').oninput=e=>{
-  NUM_SYMBOLS=+e.target.value; $('symVal').textContent=NUM_SYMBOLS; // update REL_COUNT as at least 1 less
-  // ensure REL_COUNT slider doesn't exceed NUM_SYMBOLS-1
-  const maxRel=NUM_SYMBOLS-1;
+  NUM_SYMBOLS=+e.target.value;
+  $('symVal').textContent=NUM_SYMBOLS;
   const relSlider=$('relCount');
+  const maxRel=Math.min(15, NUM_SYMBOLS * (NUM_SYMBOLS - 1));
   relSlider.max=maxRel;
-  if(REL_COUNT>maxRel){ REL_COUNT=maxRel; relSlider.value=maxRel; }
-  $('relCountVal').textContent=REL_COUNT;
+  if(REL_COUNT>maxRel){
+    REL_COUNT=maxRel;
+    relSlider.value=maxRel;
+    $('relCountVal').textContent=REL_COUNT;
+  }
 };
 $('relCount').oninput=e=>{
-  REL_COUNT=+e.target.value; $('relCountVal').textContent=REL_COUNT;
-  NUM_SYMBOLS=REL_COUNT+1;
-  $('symbols').value=NUM_SYMBOLS; $('symVal').textContent=NUM_SYMBOLS;
+  REL_COUNT=+e.target.value;
+  $('relCountVal').textContent=REL_COUNT;
 };
-$('compCount').oninput=e=>{ COMP_COUNT=+e.target.value; $('compVal').textContent=COMP_COUNT; };
-$('scramble').onchange=e=>{ SCRAMBLE=e.target.checked; };
-$('condMode').onchange=e=>{ COND_MODE=e.target.checked; };
-
-// voice UI init
+$('compCount').oninput=e=>{
+  COMP_COUNT=+e.target.value;
+  $('compVal').textContent=COMP_COUNT;
+};
+$('scramble').onchange=e=>{
+  SCRAMBLE=e.target.checked;
+};
+$('condMode').onchange=e=>{
+  COND_MODE=e.target.checked;
+};
 $('refreshVoices').onclick=()=>populateMenusFast();
-$('testVoice').onclick=async()=>{ if(!VOICE) populateMenusFast(); await speak('Voice check. Example: C three is north east of H seven.'); };
-
-/* ===================== immediate paint ===================== */
-document.addEventListener('DOMContentDOMContentLoaded', ()=>{
+$('testVoice').onclick=async()=>{
+  if(!VOICE) populateMenusFast();
+  await speak('Voice check. Example: C three is north east of H seven.');
+};
+document.addEventListener('DOMContentLoaded', ()=>{
   populateMenusFast();
   applyVoiceDefaults();
   $('voiceStatus').textContent='Ready';
-  // init complexity label values
   $('symVal').textContent=NUM_SYMBOLS;
   $('relCountVal').textContent=REL_COUNT;
   $('compVal').textContent=COMP_COUNT;
+  $('premiseIntervalVal').textContent = PREMISE_INTERVAL_SEC.toFixed(1) + ' s';
 });
 </script>
 </body>
