@@ -41,7 +41,8 @@ select{ min-height:38px }
         <label>Pause between relations in the same premise (seconds): <span id="pVal">1.0 s</span></label>
         <input id="pauseTime" type="range" min="0" max="60" step="0.1" value="1">
         <label>Pause between premises (seconds): <span id="premiseIntervalVal">1.0 s</span></label>
-        <input id="premiseInterval" type="range" min="0" max="60" step="0.1" value="1">
+        <!-- CHANGED: max from 60 to 20 to cap the solve window customization at 20s -->
+        <input id="premiseInterval" type="range" min="0" max="20" step="0.1" value="1">
         <label>Target match rate: <span id="rVal">25%</span></label>
         <input id="rate" type="range" min="0" max="100" step="1" value="25">
         <hr style="border:none;border-top:1px solid rgba(0,200,255,.25);margin:8px 0">
@@ -65,7 +66,7 @@ select{ min-height:38px }
         <select id="regionSelect"></select>
         <label>Voice</label>
         <select id="voice"></select>
-        <div class="mut" id="voiceHint" style="margin-top:6px;">Menus fill instantly; they’ll auto‑update if the system exposes more voices.</div>
+        <div class="mut" id="voiceHint" style="margin-top:6px;">Menus fill instantly; they’ll auto-update if the system exposes more voices.</div>
         <label style="margin-top:10px">Rate: <span id="rateVal">0.95</span></label>
         <input id="vRate" type="range" min="0.7" max="1.6" step="0.01" value="0.95">
         <label>Pitch: <span id="pitchVal">1.28</span></label>
